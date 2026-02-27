@@ -9,7 +9,7 @@ Basic users only need Step 1.  Steps 2-3 are for LoRA fine-tuning.
 """
 
 from __future__ import annotations
-import os, platform, subprocess, threading, re
+import os, platform, subprocess, sys, threading, re
 import customtkinter as ctk
 
 from gui.theme  import COLORS, FONT_FAMILY, FONT_SIZES
@@ -137,14 +137,18 @@ TRAINING_PKGS = [
     "sentencepiece", "protobuf",
 ]
 
+def _pip_cmd(*args: str) -> list[str]:
+    """Build a pip command list using the active Python interpreter."""
+    return [sys.executable, "-m", "pip", "install"] + list(args)
+
 TORCH_CUDA_CMD = (
-    "pip install torch torchvision torchaudio "
-    "--index-url https://download.pytorch.org/whl/cu124"
+    f'"{sys.executable}" -m pip install torch torchvision torchaudio '
+    f'--index-url https://download.pytorch.org/whl/cu124'
 )
 
 UNSLOTH_CMD = (
-    'pip install "unsloth[cu124-torch250] @ '
-    'git+https://github.com/unslothai/unsloth.git"'
+    f'"{sys.executable}" -m pip install "unsloth[cu124-torch250] @ '
+    f'git+https://github.com/unslothai/unsloth.git"'
 )
 
 
@@ -739,7 +743,7 @@ class SetupPage(ctk.CTkFrame):
         def _do():
             ok = self._run_pip(
                 "Step 1: Core Dependencies",
-                ["pip", "install"] + CORE_DEPS,
+                _pip_cmd(*CORE_DEPS),
                 timeout=300,
             )
             self.after(0, lambda: self._step_done(1, ok))
@@ -806,7 +810,7 @@ class SetupPage(ctk.CTkFrame):
             ))
             ok_rest = self._run_pip(
                 "Step 3b: PEFT + TRL + Transformers + more",
-                ["pip", "install"] + TRAINING_PKGS,
+                _pip_cmd(*TRAINING_PKGS),
                 timeout=300,
             )
 
