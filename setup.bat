@@ -1,7 +1,7 @@
 @echo off
 echo ================================================
 echo   LoRA Data Toolkit - Setup
-echo   https://github.com/YOUR_USERNAME/lora-data-toolkit
+echo   https://github.com/HeavenFYouMissed/LoRA-Toolkit
 echo ================================================
 echo.
 

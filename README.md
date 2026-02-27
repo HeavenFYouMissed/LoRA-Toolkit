@@ -67,15 +67,15 @@ Collect Data  →  Organize  →  Export  →  Train LoRA  →  Import to Ollama
 
 ### Option 1: Setup Script
 ```bat
-git clone https://github.com/YOUR_USERNAME/lora-data-toolkit.git
-cd lora-data-toolkit
+git clone https://github.com/HeavenFYouMissed/LoRA-Toolkit.git
+cd LoRA-Toolkit
 setup.bat
 ```
 
 ### Option 2: Manual
 ```bash
-git clone https://github.com/YOUR_USERNAME/lora-data-toolkit.git
-cd lora-data-toolkit
+git clone https://github.com/HeavenFYouMissed/LoRA-Toolkit.git
+cd LoRA-Toolkit
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
