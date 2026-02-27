@@ -4,7 +4,7 @@ Uses trafilatura for high-quality extraction, BeautifulSoup as fallback.
 GitHub URLs are automatically routed to the specialized GitHub scraper.
 """
 import requests
-from config import REQUEST_TIMEOUT, USER_AGENT
+from config import REQUEST_TIMEOUT, REQUEST_HEADERS
 
 try:
     import trafilatura
@@ -29,8 +29,7 @@ def scrape_url(url):
         return scrape_github(url)
 
     try:
-        headers = {"User-Agent": USER_AGENT}
-        response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        response = requests.get(url, headers=REQUEST_HEADERS, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         html = response.text
 
@@ -109,8 +108,7 @@ def scrape_multiple_urls(urls):
 def extract_links(url, filter_domain=True):
     """Extract all links from a page (useful for crawling documentation)."""
     try:
-        headers = {"User-Agent": USER_AGENT}
-        response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        response = requests.get(url, headers=REQUEST_HEADERS, timeout=REQUEST_TIMEOUT)
         soup = BeautifulSoup(response.text, "html.parser")
 
         from urllib.parse import urljoin, urlparse

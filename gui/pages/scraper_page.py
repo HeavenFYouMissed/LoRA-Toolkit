@@ -30,7 +30,7 @@ class ScraperPage(ctk.CTkFrame):
         # URL Input
         self.url_field = InputField(
             container, label_text="URL",
-            placeholder="https://www.guidedhacking.com/threads/..."
+            placeholder="https://docs.example.com/article/..."
         )
         self.url_field.pack(fill="x", pady=(0, 10))
         Tooltip(self.url_field, "Paste any webpage URL here.\nThe scraper will extract the main text content from the page.\nWorks with articles, docs, forum posts, GitHub pages, etc.")

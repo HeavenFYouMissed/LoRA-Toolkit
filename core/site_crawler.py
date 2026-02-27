@@ -7,7 +7,7 @@ import re
 from urllib.parse import urljoin, urlparse, urldefrag
 import requests
 from bs4 import BeautifulSoup
-from config import REQUEST_TIMEOUT, USER_AGENT
+from config import REQUEST_TIMEOUT, REQUEST_HEADERS
 
 try:
     import trafilatura
@@ -83,8 +83,7 @@ def _scrape_single_page(url):
         return result
 
     try:
-        headers = {"User-Agent": USER_AGENT}
-        resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        resp = requests.get(url, headers=REQUEST_HEADERS, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         html = resp.text
 
