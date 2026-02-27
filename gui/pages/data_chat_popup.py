@@ -23,7 +23,8 @@ from gui.widgets import ActionButton, Tooltip
 from core.database import get_entry, add_entry
 from core.ai_cleaner import (
     chat, list_models, is_ollama_running, preload_model, pull_model,
-    DEFAULT_MODEL,
+    groq_chat, groq_list_models,
+    DEFAULT_MODEL, GROQ_MODELS, GROQ_DEFAULT_MODEL,
 )
 from core.settings import load_settings
 from core.scraper import scrape_url
@@ -120,9 +121,10 @@ class DataChatPopup(ctk.CTkToplevel):
         ]
         self._generating = False
         self._last_reply = ""
+        self._provider = self._settings.get("ai_provider", "local")
 
         self._build_ui()
-        self.after(200, self._check_ollama)
+        self.after(200, self._refresh_connection)
 
     # ──────────────────────────────────────────────────────────────
     # UI
@@ -210,11 +212,22 @@ class DataChatPopup(ctk.CTkToplevel):
 
         # Connection status
         self.conn_label = ctk.CTkLabel(
-            sb_inner, text="Checking Ollama...",
+            sb_inner, text="Checking connection...",
             font=(FONT_FAMILY, FONT_SIZES["tiny"]),
             text_color=COLORS["text_muted"],
         )
         self.conn_label.pack(anchor="w", pady=(0, 6))
+
+        # Provider toggle
+        self.btn_provider = ActionButton(
+            sb_inner, text=self._provider_label(),
+            command=self._toggle_provider,
+            style="secondary", width=220,
+        )
+        self.btn_provider.pack(pady=(0, 8))
+        Tooltip(self.btn_provider,
+                "Switch between local Ollama and Groq Cloud.\n"
+                "Set your Groq API key in Settings first.")
 
         # ── Action buttons in sidebar ────────────────────────
         btn_export_reply = ActionButton(
@@ -265,6 +278,7 @@ class DataChatPopup(ctk.CTkToplevel):
             "  • Generate Alpaca/ShareGPT training pairs\n"
             "  • Rewrite or merge entries\n\n"
             "🌐  Type /fetch <url> to load a webpage into context.\n"
+            "☁️  Use the provider toggle in the sidebar for Groq Cloud.\n"
             "💡 Tip: Use 'Save Reply to Library' to capture AI output as a new entry."
         )
 
@@ -310,6 +324,67 @@ class DataChatPopup(ctk.CTkToplevel):
             text_color=COLORS["text_muted"],
         )
         self.counter_label.pack(padx=12, pady=(0, 5), anchor="w")
+
+    # ──────────────────────────────────────────────────────────────
+    # Provider toggle
+    # ──────────────────────────────────────────────────────────────
+
+    def _provider_label(self) -> str:
+        return "🖥  Local Ollama" if self._provider == "local" else "☁️  Groq Cloud"
+
+    def _toggle_provider(self):
+        """Switch between Local Ollama and Groq Cloud."""
+        if self._provider == "local":
+            key = self._settings.get("groq_api_key", "")
+            if not key:
+                self._add_system_bubble(
+                    "⚠️  No Groq API key set!\n\n"
+                    "Go to Settings → Groq Cloud and paste your API key.\n"
+                    "Get one free at: console.groq.com"
+                )
+                self._scroll_to_bottom()
+                return
+            self._provider = "groq"
+        else:
+            self._provider = "local"
+
+        self.btn_provider.configure(text=self._provider_label())
+        self._refresh_connection()
+
+        label = "☁️ Groq Cloud" if self._provider == "groq" else "🖥 Local Ollama"
+        self._add_system_bubble(f"Switched to {label}")
+        self._scroll_to_bottom()
+
+    def _refresh_connection(self):
+        """Refresh connection and model list based on current provider."""
+        if self._provider == "groq":
+            key = self._settings.get("groq_api_key", "")
+            if key:
+                self.conn_label.configure(
+                    text="☁️  Groq Cloud connected",
+                    text_color=COLORS["accent_green"],
+                )
+                def _bg():
+                    models = groq_list_models(key)
+                    self.after(0, lambda: self._set_groq_models(models))
+                threading.Thread(target=_bg, daemon=True).start()
+            else:
+                self.conn_label.configure(
+                    text="☁️  Groq — no API key (set in Settings)",
+                    text_color=COLORS["warning"],
+                )
+        else:
+            self._check_ollama()
+
+    def _set_groq_models(self, models):
+        """Update model dropdown with Groq models."""
+        if models:
+            self.model_menu.configure(values=models)
+            pref = self._settings.get("groq_model", GROQ_DEFAULT_MODEL)
+            if pref in models:
+                self.model_menu.set(pref)
+            else:
+                self.model_menu.set(models[0])
 
     # ──────────────────────────────────────────────────────────────
     # Connection
@@ -463,10 +538,19 @@ class DataChatPopup(ctk.CTkToplevel):
                 self._fetch_url(url)
                 return
 
-        if not is_ollama_running():
+        # Check connectivity based on provider
+        if self._provider == "local" and not is_ollama_running():
             self._add_system_bubble(
                 "⚠️  Ollama is not running!\n"
                 "Start it from the Setup page or run 'ollama serve' in a terminal."
+            )
+            self._scroll_to_bottom()
+            return
+
+        if self._provider == "groq" and not self._settings.get("groq_api_key"):
+            self._add_system_bubble(
+                "⚠️  No Groq API key!\n"
+                "Go to Settings → Groq Cloud to add your key."
             )
             self._scroll_to_bottom()
             return
@@ -490,8 +574,10 @@ class DataChatPopup(ctk.CTkToplevel):
 
         model = self.model_menu.get()
         messages_copy = list(self._messages)
+        provider = self._provider
+        groq_key = self._settings.get("groq_api_key", "")
 
-        # Context window from settings (0 = auto)
+        # Context window from settings (0 = auto) — Ollama only
         settings_ctx = self._settings.get("ollama_num_ctx", 0)
         num_ctx = settings_ctx if settings_ctx > 0 else None
 
@@ -509,12 +595,16 @@ class DataChatPopup(ctk.CTkToplevel):
 
         def worker():
             t0 = time.time()
-            result = chat(
-                messages=messages_copy,
-                model=model,
-                on_token=on_token,
-                num_ctx=num_ctx,
-            )
+            if provider == "groq":
+                result = groq_chat(
+                    messages=messages_copy, model=model,
+                    api_key=groq_key, on_token=on_token,
+                )
+            else:
+                result = chat(
+                    messages=messages_copy, model=model,
+                    on_token=on_token, num_ctx=num_ctx,
+                )
             elapsed = time.time() - t0
 
             def _done():

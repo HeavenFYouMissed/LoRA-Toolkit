@@ -259,6 +259,125 @@ class SettingsPage(ctk.CTkFrame):
         self.ctx_label.pack(side="left")
         self.ctx_var.trace_add("write", self._update_ctx_label)
 
+        # ─── Groq Cloud Section ─────────────────────────────
+        self._section_label(container, "☁️  Groq Cloud (Big Models)")
+
+        groq_frame = ctk.CTkFrame(container, fg_color=COLORS["bg_card"], corner_radius=10)
+        groq_frame.pack(fill="x", pady=(0, 15))
+
+        groq_info = ctk.CTkLabel(
+            groq_frame,
+            text="🚀  Connect to Groq for blazing-fast cloud inference with 70B+ models.\n"
+                 "   Free tier available — sign up at console.groq.com",
+            font=(FONT_FAMILY, FONT_SIZES["small"]),
+            text_color=COLORS["text_muted"],
+            justify="left",
+        )
+        groq_info.pack(anchor="w", padx=15, pady=(12, 8))
+
+        # API Key
+        key_row = ctk.CTkFrame(groq_frame, fg_color="transparent")
+        key_row.pack(fill="x", padx=15, pady=(0, 6))
+
+        ctk.CTkLabel(
+            key_row, text="API Key:",
+            font=(FONT_FAMILY, FONT_SIZES["body"], "bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 10))
+
+        self.groq_key_entry = ctk.CTkEntry(
+            key_row, width=350,
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            fg_color=COLORS["bg_input"],
+            text_color=COLORS["text_primary"],
+            border_color=COLORS["border"],
+            border_width=1, corner_radius=8, height=32,
+            placeholder_text="gsk_xxxxxxxxxxxxxxxxxxxxxxxx",
+            show="●",
+        )
+        self.groq_key_entry.pack(side="left")
+        if self.settings.get("groq_api_key"):
+            self.groq_key_entry.insert(0, self.settings["groq_api_key"])
+        Tooltip(self.groq_key_entry,
+                "Your Groq API key from console.groq.com.\n"
+                "Kept locally in settings.json — never sent anywhere but Groq.\n"
+                "Leave blank to disable cloud features.")
+
+        # Show/hide key toggle
+        self._groq_key_visible = False
+        btn_eye = ActionButton(
+            key_row, text="👁", command=self._toggle_groq_key_vis,
+            style="secondary", width=35,
+        )
+        btn_eye.pack(side="left", padx=(6, 0))
+        Tooltip(btn_eye, "Show / hide API key")
+
+        # Default cloud model
+        gmodel_row = ctk.CTkFrame(groq_frame, fg_color="transparent")
+        gmodel_row.pack(fill="x", padx=15, pady=(0, 6))
+
+        ctk.CTkLabel(
+            gmodel_row, text="Cloud Model:",
+            font=(FONT_FAMILY, FONT_SIZES["body"], "bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 10))
+
+        from core.ai_cleaner import GROQ_MODELS, GROQ_DEFAULT_MODEL
+        self.groq_model_menu = ctk.CTkOptionMenu(
+            gmodel_row,
+            values=GROQ_MODELS,
+            font=(FONT_FAMILY, FONT_SIZES["small"]),
+            fg_color=COLORS["bg_input"],
+            button_color=COLORS["accent"],
+            button_hover_color=COLORS["accent_hover"],
+            width=250, height=30,
+        )
+        self.groq_model_menu.pack(side="left")
+        self.groq_model_menu.set(
+            self.settings.get("groq_model", GROQ_DEFAULT_MODEL)
+        )
+        Tooltip(self.groq_model_menu,
+                "Default model for Groq Cloud.\n"
+                "70B models give GPT-4 quality at insane speed.\n"
+                "8B models are fastest for quick cleaning.")
+
+        # Default provider
+        prov_row = ctk.CTkFrame(groq_frame, fg_color="transparent")
+        prov_row.pack(fill="x", padx=15, pady=(4, 12))
+
+        ctk.CTkLabel(
+            prov_row, text="Default Provider:",
+            font=(FONT_FAMILY, FONT_SIZES["body"], "bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 10))
+
+        self.provider_var = ctk.StringVar(
+            value=self.settings.get("ai_provider", "local")
+        )
+        prov_local = ctk.CTkRadioButton(
+            prov_row, text="🖥  Local (Ollama)",
+            variable=self.provider_var, value="local",
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            text_color=COLORS["text_secondary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+        )
+        prov_local.pack(side="left", padx=(0, 15))
+        Tooltip(prov_local, "Use your local Ollama models by default.\nFree, private, works offline.")
+
+        prov_groq = ctk.CTkRadioButton(
+            prov_row, text="☁️  Groq Cloud",
+            variable=self.provider_var, value="groq",
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            text_color=COLORS["text_secondary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+        )
+        prov_groq.pack(side="left")
+        Tooltip(prov_groq, "Use Groq Cloud by default for all AI features.\n70B+ models, 50-150ms latency.\nRequires API key above.")
+
         # ─── Export Defaults Section ────────────────────────
         self._section_label(container, "🚀  Export Defaults")
 
@@ -423,6 +542,11 @@ class SettingsPage(ctk.CTkFrame):
         except Exception:
             pass
 
+    def _toggle_groq_key_vis(self):
+        """Show/hide the Groq API key."""
+        self._groq_key_visible = not self._groq_key_visible
+        self.groq_key_entry.configure(show="" if self._groq_key_visible else "●")
+
     def _gather_settings(self) -> dict:
         """Collect current UI values into a settings dict."""
         return {
@@ -436,6 +560,9 @@ class SettingsPage(ctk.CTkFrame):
             "ollama_url": self.ollama_url_entry.get().strip() or DEFAULTS["ollama_url"],
             "ollama_model": self.ollama_model_entry.get().strip() or DEFAULTS["ollama_model"],
             "ollama_num_ctx": self.ctx_var.get(),
+            "groq_api_key": self.groq_key_entry.get().strip(),
+            "groq_model": self.groq_model_menu.get(),
+            "ai_provider": self.provider_var.get(),
             "default_chunk_size": self._safe_int(self.chunk_entry.get(), 512),
             "default_system_prompt": self.prompt_text.get("1.0", "end-1c").strip(),
             "request_timeout": self._safe_int(self.timeout_entry.get(), 30),
@@ -500,6 +627,10 @@ class SettingsPage(ctk.CTkFrame):
         self.ollama_model_entry.insert(0, DEFAULTS["ollama_model"])
 
         self.ctx_var.set(DEFAULTS["ollama_num_ctx"])
+
+        self.groq_key_entry.delete(0, "end")
+        self.groq_model_menu.set(DEFAULTS["groq_model"])
+        self.provider_var.set(DEFAULTS["ai_provider"])
 
         self.chunk_entry.delete(0, "end")
         self.chunk_entry.insert(0, str(DEFAULTS["default_chunk_size"]))

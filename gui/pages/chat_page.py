@@ -18,7 +18,8 @@ from gui.widgets import (
 )
 from core.ai_cleaner import (
     chat, list_models, is_ollama_running, preload_model, pull_model,
-    DEFAULT_MODEL, DEFAULT_API_URL,
+    groq_chat, groq_list_models,
+    DEFAULT_MODEL, DEFAULT_API_URL, GROQ_MODELS, GROQ_DEFAULT_MODEL,
 )
 from core.settings import load_settings
 from core.scraper import scrape_url
@@ -85,8 +86,21 @@ class ChatPage(ctk.CTkFrame):
             top_inner, text="🔄", command=self._refresh_models,
             style="secondary", width=35,
         )
-        btn_refresh.pack(side="left", padx=(0, 15))
+        btn_refresh.pack(side="left", padx=(0, 8))
         Tooltip(btn_refresh, "Refresh model list from Ollama.")
+
+        # Provider toggle (Local ↔ Cloud)
+        self._provider = self._settings.get("ai_provider", "local")
+        self.btn_provider = ActionButton(
+            top_inner, text=self._provider_label(),
+            command=self._toggle_provider,
+            style="secondary", width=140,
+        )
+        self.btn_provider.pack(side="left", padx=(0, 15))
+        Tooltip(self.btn_provider,
+                "Switch between local Ollama and Groq Cloud.\n"
+                "☁️ Cloud uses 70B+ models at blazing speed.\n"
+                "🖥 Local is free, private, and works offline.")
 
         # Clear chat
         btn_clear = ActionButton(
@@ -143,8 +157,9 @@ class ChatPage(ctk.CTkFrame):
         # Welcome message
         self._add_system_bubble(
             "👋  Welcome to AI Chat!\n\n"
-            "Chat with your local Ollama model about anything — "
-            "training data, LoRA configs, data cleaning strategies, or just ask questions.\n\n"
+            "Chat with local Ollama or Groq Cloud models — "
+            "training data, LoRA configs, data cleaning, or just ask questions.\n\n"
+            "☁️  Click the provider button to switch between Local and Cloud.\n"
             "🌐  Type /fetch <url> to load a webpage into the conversation.\n"
             "💡 Tip: Set a system prompt above to specialise the AI for your domain."
         )
@@ -197,12 +212,79 @@ class ChatPage(ctk.CTkFrame):
         self.counter_label.pack(padx=15, pady=(0, 5), anchor="w")
 
         # ─── Initial connection check ───────────────────────
-        self.after(300, self._check_ollama)
+        self.after(300, self._refresh_connection)
 
     def refresh(self):
-        """Reload settings and re-check Ollama connection."""
+        """Reload settings and re-check connection."""
         self._settings = load_settings()
-        self._check_ollama()
+        self._provider = self._settings.get("ai_provider", "local")
+        self.btn_provider.configure(text=self._provider_label())
+        self._refresh_connection()
+
+    # ───────────────────────────────────────────────────────────────
+    # PROVIDER TOGGLE
+    # ───────────────────────────────────────────────────────────────
+
+    def _provider_label(self) -> str:
+        return "🖥  Local" if self._provider == "local" else "☁️  Groq Cloud"
+
+    def _toggle_provider(self):
+        """Switch between Local Ollama and Groq Cloud."""
+        if self._provider == "local":
+            # Check if Groq key exists
+            key = self._settings.get("groq_api_key", "")
+            if not key:
+                self._add_system_bubble(
+                    "⚠️  No Groq API key set!\n\n"
+                    "Go to Settings → Groq Cloud and paste your API key.\n"
+                    "Get one free at: console.groq.com"
+                )
+                self._scroll_to_bottom()
+                return
+            self._provider = "groq"
+        else:
+            self._provider = "local"
+
+        self.btn_provider.configure(text=self._provider_label())
+        self._refresh_connection()
+
+        label = "☁️ Groq Cloud" if self._provider == "groq" else "🖥 Local Ollama"
+        self._add_system_bubble(f"Switched to {label}")
+        self._scroll_to_bottom()
+
+    def _refresh_connection(self):
+        """Refresh connection and model list based on current provider."""
+        if self._provider == "groq":
+            key = self._settings.get("groq_api_key", "")
+            if key:
+                self.conn_dot.configure(text_color=COLORS["accent_green"])
+                self.conn_label.configure(
+                    text="☁️  Groq Cloud connected",
+                    text_color=COLORS["accent_green"],
+                )
+                # Load Groq models
+                def _bg():
+                    models = groq_list_models(key)
+                    self.after(0, lambda: self._set_groq_models(models))
+                threading.Thread(target=_bg, daemon=True).start()
+            else:
+                self.conn_dot.configure(text_color=COLORS["warning"])
+                self.conn_label.configure(
+                    text="☁️  Groq — no API key (set in Settings)",
+                    text_color=COLORS["warning"],
+                )
+        else:
+            self._check_ollama()
+
+    def _set_groq_models(self, models):
+        """Update model dropdown with Groq models."""
+        if models:
+            self.model_menu.configure(values=models)
+            pref = self._settings.get("groq_model", GROQ_DEFAULT_MODEL)
+            if pref in models:
+                self.model_menu.set(pref)
+            else:
+                self.model_menu.set(models[0])
 
     # ───────────────────────────────────────────────────────────────
     # CONNECTION & MODELS
@@ -284,7 +366,7 @@ class ChatPage(ctk.CTkFrame):
 
     def _refresh_models(self):
         self.conn_label.configure(text="Refreshing...", text_color=COLORS["text_muted"])
-        self._check_ollama()
+        self._refresh_connection()
 
     # ───────────────────────────────────────────────────────────────
     # CHAT BUBBLES
@@ -413,13 +495,22 @@ class ChatPage(ctk.CTkFrame):
                 self._fetch_url(url)
                 return
 
-        if not is_ollama_running():
+        # Check connectivity based on provider
+        if self._provider == "local" and not is_ollama_running():
             self._add_system_bubble(
                 "⚠️  Ollama is not running!\n\n"
                 "To start Ollama:\n"
                 "1. Go to the Setup / GPU page and click 'Start Ollama', or\n"
                 "2. Open a terminal and run:  ollama serve\n\n"
                 "If you haven't installed Ollama yet, download it from the Setup page."
+            )
+            self._scroll_to_bottom()
+            return
+
+        if self._provider == "groq" and not self._settings.get("groq_api_key"):
+            self._add_system_bubble(
+                "⚠️  No Groq API key!\n"
+                "Go to Settings → Groq Cloud to add your key."
             )
             self._scroll_to_bottom()
             return
@@ -451,8 +542,10 @@ class ChatPage(ctk.CTkFrame):
 
         model = self.model_menu.get()
         messages_copy = list(self._messages)
+        provider = self._provider
+        groq_key = self._settings.get("groq_api_key", "")
 
-        # Context window from settings (0 = auto)
+        # Context window from settings (0 = auto) — Ollama only
         settings_ctx = self._settings.get("ollama_num_ctx", 0)
         num_ctx = settings_ctx if settings_ctx > 0 else None
 
@@ -468,10 +561,16 @@ class ChatPage(ctk.CTkFrame):
 
         def worker():
             t0 = time.time()
-            result = chat(
-                messages=messages_copy, model=model,
-                on_token=on_token, num_ctx=num_ctx,
-            )
+            if provider == "groq":
+                result = groq_chat(
+                    messages=messages_copy, model=model,
+                    api_key=groq_key, on_token=on_token,
+                )
+            else:
+                result = chat(
+                    messages=messages_copy, model=model,
+                    on_token=on_token, num_ctx=num_ctx,
+                )
             elapsed = time.time() - t0
 
             def _show():

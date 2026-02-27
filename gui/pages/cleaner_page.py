@@ -17,6 +17,7 @@ from core.database import get_all_entries, get_entry, update_entry, mark_cleaned
 from core.ai_cleaner import (
     clean_text, detect_content_type, list_models,
     is_ollama_running, preload_model, pull_model, DEFAULT_MODEL, DEFAULT_API_URL,
+    groq_list_models, GROQ_MODELS, GROQ_DEFAULT_MODEL,
 )
 from core.settings import load_settings
 
@@ -32,6 +33,7 @@ class CleanerPage(ctk.CTkFrame):
         self._attempt = 1
         self._cleaning = False
         self._settings = load_settings()
+        self._provider = self._settings.get("ai_provider", "local")
         self._build_ui()
 
     # ───────────────────────────────────────────────────────────────
@@ -93,6 +95,17 @@ class CleanerPage(ctk.CTkFrame):
         )
         btn_refresh_models.pack(side="left", padx=(0, 12))
         Tooltip(btn_refresh_models, "Refresh the list of available Ollama models.")
+
+        # Provider toggle
+        self.btn_provider = ActionButton(
+            conn_inner, text=self._provider_label(),
+            command=self._toggle_provider,
+            style="secondary", width=120,
+        )
+        self.btn_provider.pack(side="left", padx=(0, 12))
+        Tooltip(self.btn_provider,
+                "Switch between local Ollama and Groq Cloud.\n"
+                "Set your Groq API key in Settings first.")
 
         # Content type override
         ctk.CTkLabel(
@@ -347,7 +360,65 @@ class CleanerPage(ctk.CTkFrame):
         self.status.pack(fill="x", pady=(5, 0))
 
         # ─── Initial state ──────────────────────────────────
-        self.after(300, self._check_ollama)
+        self.after(300, self._refresh_connection)
+
+    # ───────────────────────────────────────────────────────────────
+    # PROVIDER TOGGLE
+    # ───────────────────────────────────────────────────────────────
+
+    def _provider_label(self) -> str:
+        return "🖥  Local" if self._provider == "local" else "☁️  Groq Cloud"
+
+    def _toggle_provider(self):
+        """Switch between Local Ollama and Groq Cloud."""
+        if self._provider == "local":
+            key = self._settings.get("groq_api_key", "")
+            if not key:
+                self.status.set_error(
+                    "No Groq API key — go to Settings → Groq Cloud"
+                )
+                return
+            self._provider = "groq"
+        else:
+            self._provider = "local"
+
+        self.btn_provider.configure(text=self._provider_label())
+        self._refresh_connection()
+        label = "☁️ Groq Cloud" if self._provider == "groq" else "🖥 Local Ollama"
+        self.status.set_status(f"Switched to {label}")
+
+    def _refresh_connection(self):
+        """Refresh connection and model list based on current provider."""
+        if self._provider == "groq":
+            key = self._settings.get("groq_api_key", "")
+            if key:
+                self.conn_dot.configure(text_color=COLORS["accent_green"])
+                self.conn_label.configure(
+                    text="☁️  Groq Cloud connected",
+                    text_color=COLORS["accent_green"],
+                )
+                def _bg():
+                    models = groq_list_models(key)
+                    self.after(0, lambda: self._set_groq_models(models))
+                threading.Thread(target=_bg, daemon=True).start()
+            else:
+                self.conn_dot.configure(text_color=COLORS["warning"])
+                self.conn_label.configure(
+                    text="☁️  Groq — no API key (set in Settings)",
+                    text_color=COLORS["warning"],
+                )
+        else:
+            self._check_ollama()
+
+    def _set_groq_models(self, models):
+        """Update model dropdown with Groq models."""
+        if models:
+            self.model_menu.configure(values=models)
+            pref = self._settings.get("groq_model", GROQ_DEFAULT_MODEL)
+            if pref in models:
+                self.model_menu.set(pref)
+            else:
+                self.model_menu.set(models[0])
 
     # ───────────────────────────────────────────────────────────────
     # CONNECTION & MODELS
@@ -443,7 +514,7 @@ class CleanerPage(ctk.CTkFrame):
 
     def _refresh_models(self):
         self.conn_label.configure(text="Refreshing...", text_color=COLORS["text_muted"])
-        self._check_ollama()
+        self._refresh_connection()
 
     # ───────────────────────────────────────────────────────────────
     # ENTRY LIST
@@ -536,8 +607,12 @@ class CleanerPage(ctk.CTkFrame):
             self.status.set_error("No entries selected — check some boxes first")
             return
 
-        if not is_ollama_running():
+        if self._provider == "local" and not is_ollama_running():
             self._show_ollama_popup()
+            return
+
+        if self._provider == "groq" and not self._settings.get("groq_api_key"):
+            self.status.set_error("No Groq API key — go to Settings → Groq Cloud")
             return
 
         self._queue = selected
@@ -669,6 +744,9 @@ class CleanerPage(ctk.CTkFrame):
         ctype = self.type_menu.get()
         custom = self.custom_instr.get().strip()
         attempt = self._attempt
+        provider = self._provider
+        groq_key = self._settings.get("groq_api_key", "")
+        groq_model = self.model_menu.get()
         self._first_token = True
 
         def on_token(text):
@@ -688,6 +766,9 @@ class CleanerPage(ctk.CTkFrame):
                 attempt=attempt,
                 custom_instruction=custom,
                 on_token=on_token,
+                provider=provider,
+                groq_api_key=groq_key,
+                groq_model=groq_model,
             )
             self.after(0, lambda: self._finalize_result(entry, result))
 
@@ -887,4 +968,6 @@ class CleanerPage(ctk.CTkFrame):
 
     def refresh(self):
         self._settings = load_settings()
-        self._check_ollama()
+        self._provider = self._settings.get("ai_provider", "local")
+        self.btn_provider.configure(text=self._provider_label())
+        self._refresh_connection()

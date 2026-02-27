@@ -40,6 +40,11 @@ DEFAULTS = {
     "ollama_model": "qwen3-vl:4b-instruct",
     "ollama_num_ctx": 0,  # 0 = auto-calculate based on content
 
+    # Groq Cloud API
+    "groq_api_key": "",
+    "groq_model": "llama-3.1-70b-versatile",
+    "ai_provider": "local",  # "local" = Ollama, "groq" = Groq Cloud
+
     # Appearance
     "accent_color": "#e94560",
     "window_opacity": 0.97,

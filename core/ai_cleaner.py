@@ -20,6 +20,20 @@ DEFAULT_MODEL = "qwen3-vl:4b-instruct"
 DEFAULT_API_URL = "http://localhost:11434"
 MAX_INPUT_CHARS = 12_000  # truncate monster files
 
+# ─── Groq Cloud ────────────────────────────────────────────────────
+
+GROQ_API_URL = "https://api.groq.com/openai/v1"
+GROQ_DEFAULT_MODEL = "llama-3.1-70b-versatile"
+GROQ_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "llama3-8b-8192",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
+]
+
 # ─── Prompt Library ────────────────────────────────────────────────
 
 _BASE_RULES = """\
@@ -177,9 +191,12 @@ def clean_text(
     attempt: int = 1,
     custom_instruction: str = "",
     on_token=None,
+    provider: str = "local",
+    groq_api_key: str = "",
+    groq_model: str = GROQ_DEFAULT_MODEL,
 ) -> dict:
     """
-    Clean *raw_text* via Ollama.
+    Clean *raw_text* via Ollama (local) or Groq (cloud).
 
     Returns dict:
         success: bool
@@ -212,9 +229,14 @@ def clean_text(
     if attempt > 1:
         prompt += _STRICT_SUFFIX.format(attempt=attempt)
 
-    # Call Ollama HTTP API (no pip dependency required)
+    # Call AI backend (Ollama local or Groq cloud)
     try:
-        cleaned = _ollama_generate(prompt, model, api_url, on_token=on_token)
+        if provider == "groq" and groq_api_key:
+            cleaned = groq_generate(
+                prompt, model=groq_model, api_key=groq_api_key, on_token=on_token,
+            )
+        else:
+            cleaned = _ollama_generate(prompt, model, api_url, on_token=on_token)
     except ConnectionError as e:
         return {
             "success": False,
@@ -513,3 +535,116 @@ def _ollama_generate(
             return "".join(chunks).strip()
     except urllib.error.URLError as e:
         raise ConnectionError(str(e)) from e
+
+
+# ─── Groq Cloud Backend ───────────────────────────────────────────
+
+def groq_chat(
+    messages: list[dict],
+    model: str = GROQ_DEFAULT_MODEL,
+    api_key: str = "",
+    on_token=None,
+) -> dict:
+    """
+    Multi-turn chat via Groq's OpenAI-compatible /chat/completions endpoint.
+
+    Uses pure HTTP — no pip dependency.  Supports streaming via SSE.
+
+    Returns dict:  {success, reply, error}
+    """
+    if not api_key:
+        return {"success": False, "reply": "", "error": "Groq API key not set — add it in Settings."}
+
+    url = f"{GROQ_API_URL}/chat/completions"
+    stream = on_token is not None
+
+    payload = json.dumps({
+        "model": model,
+        "messages": messages,
+        "stream": stream,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "max_tokens": 4096,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            if not stream:
+                data = json.loads(resp.read().decode())
+                reply = data["choices"][0]["message"]["content"].strip()
+                return {"success": True, "reply": reply, "error": ""}
+            # SSE streaming — lines prefixed with "data: "
+            chunks = []
+            for raw_line in resp:
+                line = raw_line.decode("utf-8").strip()
+                if not line or not line.startswith("data: "):
+                    continue
+                payload_str = line[6:]  # strip "data: "
+                if payload_str == "[DONE]":
+                    break
+                try:
+                    obj = json.loads(payload_str)
+                except json.JSONDecodeError:
+                    continue
+                delta = obj.get("choices", [{}])[0].get("delta", {})
+                token = delta.get("content", "")
+                if token:
+                    chunks.append(token)
+                    on_token(token)
+            return {"success": True, "reply": "".join(chunks).strip(), "error": ""}
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode()
+            err_data = json.loads(body)
+            msg = err_data.get("error", {}).get("message", body[:200])
+        except Exception:
+            msg = body[:200] or str(e)
+        return {"success": False, "reply": "", "error": f"Groq API error ({e.code}): {msg}"}
+    except urllib.error.URLError as e:
+        return {"success": False, "reply": "", "error": f"Cannot reach Groq: {e}"}
+    except Exception as e:
+        return {"success": False, "reply": "", "error": str(e)}
+
+
+def groq_generate(
+    prompt: str,
+    model: str = GROQ_DEFAULT_MODEL,
+    api_key: str = "",
+    on_token=None,
+) -> str:
+    """Single-prompt generation via Groq (for cleaning).
+
+    Wraps the prompt as a user message and calls groq_chat.
+    Returns the cleaned text string, or raises on error.
+    """
+    messages = [{"role": "user", "content": prompt}]
+    result = groq_chat(messages, model=model, api_key=api_key, on_token=on_token)
+    if result["success"]:
+        return result["reply"]
+    raise ConnectionError(result["error"])
+
+
+def groq_list_models(api_key: str = "") -> list[str]:
+    """Fetch available models from Groq API.  Falls back to static list."""
+    if not api_key:
+        return list(GROQ_MODELS)
+    try:
+        url = f"{GROQ_API_URL}/models"
+        req = urllib.request.Request(
+            url, method="GET",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+        names = sorted(m["id"] for m in data.get("data", []) if m.get("active", True))
+        return names if names else list(GROQ_MODELS)
+    except Exception:
+        return list(GROQ_MODELS)
