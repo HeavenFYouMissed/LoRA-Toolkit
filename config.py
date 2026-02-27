@@ -17,7 +17,7 @@ os.makedirs(EXPORTS_DIR, exist_ok=True)
 APP_NAME = "LoRA Data Toolkit"
 APP_VERSION = "1.0.0"
 WINDOW_WIDTH = 1280
-WINDOW_HEIGHT = 800
+WINDOW_HEIGHT = 1000
 SIDEBAR_WIDTH = 220
 
 # Scraper settings
