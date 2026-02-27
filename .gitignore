@@ -1,0 +1,57 @@
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Runtime data (user's local DB, exports, training artifacts)
+data/
+*.db
+
+# Training outputs
+outputs/
+lora_adapter/
+*_gguf/
+Modelfile
+train_lora.py
+
+# Merge outputs
+merges/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# OS
+Thumbs.db
+.DS_Store
+Desktop.ini
+ehthumbs.db
+
+# Distribution
+*.zip
+*.tar.gz
+*.rar
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
