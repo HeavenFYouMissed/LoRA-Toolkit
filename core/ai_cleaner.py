@@ -311,11 +311,13 @@ def chat(
     messages: list[dict],
     model: str = DEFAULT_MODEL,
     api_url: str = DEFAULT_API_URL,
+    on_token=None,
 ) -> dict:
     """
     Multi-turn chat with Ollama via /api/chat.
 
     *messages* is a list of {"role": "system"|"user"|"assistant", "content": "..."}.
+    *on_token*: optional callback ``fn(str)`` invoked for each streamed token.
 
     Returns dict:
         success: bool
@@ -323,10 +325,11 @@ def chat(
         error:   str (empty on success)
     """
     url = f"{api_url.rstrip('/')}/api/chat"
+    stream = on_token is not None
     payload = json.dumps({
         "model": model,
         "messages": messages,
-        "stream": False,
+        "stream": stream,
         "keep_alive": "30m",
         "options": {
             "temperature": 0.7,
@@ -340,10 +343,28 @@ def chat(
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read().decode())
-        reply = data.get("message", {}).get("content", "").strip()
-        return {"success": True, "reply": reply, "error": ""}
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            if not stream:
+                data = json.loads(resp.read().decode())
+                reply = data.get("message", {}).get("content", "").strip()
+                return {"success": True, "reply": reply, "error": ""}
+            # Streaming mode — read NDJSON line by line
+            chunks = []
+            for raw_line in resp:
+                line = raw_line.decode("utf-8").strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                token = obj.get("message", {}).get("content", "")
+                if token:
+                    chunks.append(token)
+                    on_token(token)
+                if obj.get("done", False):
+                    break
+            return {"success": True, "reply": "".join(chunks).strip(), "error": ""}
     except urllib.error.URLError as e:
         return {"success": False, "reply": "", "error": f"Cannot reach Ollama: {e}"}
     except Exception as e:

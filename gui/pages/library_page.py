@@ -104,6 +104,16 @@ class LibraryPage(ctk.CTkFrame):
         btn_del_sel.pack(side="right")
         Tooltip(btn_del_sel, "Delete all checked entries (use checkboxes).\nThis is permanent — cannot be undone.\nUseful for cleaning up bad scrapes or duplicates.")
 
+        btn_chat_sel = ActionButton(
+            filter_row, text="💬 Chat", command=self._chat_with_selected,
+            style="primary", width=80
+        )
+        btn_chat_sel.pack(side="right", padx=(0, 4))
+        Tooltip(btn_chat_sel,
+                "Open a chat window with the checked entries loaded as context.\n"
+                "Ask the AI to explain, compare, summarise, or generate\n"
+                "training data from the selected files.")
+
         # Entry list (scrollable)
         self.list_frame = ctk.CTkScrollableFrame(
             left_panel,
@@ -411,3 +421,12 @@ class LibraryPage(ctk.CTkFrame):
         self.refresh()
         if self.app:
             self.app.refresh_stats()
+
+    def _chat_with_selected(self):
+        """Open the Data Chat popup with selected entries loaded as context."""
+        if not self.selected_ids:
+            self.status.set_error("No entries selected — check some boxes first")
+            return
+
+        from gui.pages.data_chat_popup import DataChatPopup
+        DataChatPopup(self, list(self.selected_ids), app=self.app)

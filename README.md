@@ -78,6 +78,7 @@ Clean & polish your training data with local AI — no cloud, no API keys.
 
 ### AI Chat
 Chat with your local Ollama models directly in the app.
+- **Live streaming** — see tokens appear in real-time
 - Model selector + system prompt customization
 - Styled chat bubbles (user / assistant / system)
 - Conversation history + export to .txt
@@ -85,6 +86,19 @@ Chat with your local Ollama models directly in the app.
 
 <!-- 📸 ADD SCREENSHOT: AI Chat page showing a conversation -->
 <img width="700" alt="AI Chat" src="" />
+
+### 💬 Chat with Data (NEW)
+Select entries in the Data Library → click **Chat** → talk to the AI about your actual files.
+- **Attach library entries** as context — no copy-pasting walls of text
+- Ask: "Explain this script line by line", "Compare file 3 vs file 7", "Generate 20 Q&A pairs"
+- File sidebar shows attached entries, word counts, and estimated tokens
+- **Save Reply to Library** — capture AI output as a new training entry
+- Export entire conversation to .txt
+- Works on **CPU or GPU** — any Ollama model, no NVIDIA required
+- Smart token budgeting: auto-truncates huge files, splits context evenly
+
+<!-- 📸 ADD SCREENSHOT: Data Chat popup with files loaded in sidebar and conversation -->
+<img width="700" alt="Chat with Data" src="" />
 
 ### Ollama Integration (Setup Page)
 Built-in Ollama management — no terminal needed.
@@ -262,7 +276,7 @@ LoRA-Toolkit/
 │   ├── app.py              # Main window + sidebar navigation
 │   ├── theme.py            # OLED dark theme colors/fonts
 │   ├── widgets.py          # Reusable widgets (Tooltip, StatusBar, etc.)
-│   └── pages/              # 16 page views
+│   └── pages/              # 16 page views + 1 popup
 │       ├── scraper_page.py
 │       ├── bulk_scraper_page.py
 │       ├── site_crawler_page.py
@@ -273,6 +287,7 @@ LoRA-Toolkit/
 │       ├── library_page.py
 │       ├── cleaner_page.py     # AI Cleaner — side-by-side diff review
 │       ├── chat_page.py        # AI Chat with Ollama models
+│       ├── data_chat_popup.py  # Chat with Data — files as context
 │       ├── export_page.py
 │       ├── training_page.py    # LoRA training + HF auto-resolution
 │       ├── merge_page.py       # Model merging

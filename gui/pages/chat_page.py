@@ -279,6 +279,30 @@ class ChatPage(ctk.CTkFrame):
         )
         label.pack(padx=12, pady=8)
 
+    def _add_assistant_bubble_start(self):
+        """Create an empty assistant bubble and return the label for streaming."""
+        wrapper = ctk.CTkFrame(self.chat_frame, fg_color="transparent")
+        wrapper.pack(fill="x", padx=10, pady=(2, 6))
+
+        bubble = ctk.CTkFrame(
+            wrapper, fg_color=COLORS["bg_card"],
+            corner_radius=12,
+        )
+        bubble.pack(side="left", padx=(5, 0))
+
+        spacer = ctk.CTkFrame(wrapper, fg_color="transparent", width=80)
+        spacer.pack(side="right")
+
+        label = ctk.CTkLabel(
+            bubble, text="💭  Thinking...",
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            text_color=COLORS["text_primary"],
+            wraplength=500, justify="left",
+        )
+        label.pack(padx=12, pady=8)
+        self._scroll_to_bottom()
+        return label
+
     def _add_system_bubble(self, text: str):
         """Add a centered system/info bubble."""
         wrapper = ctk.CTkFrame(self.chat_frame, fg_color="transparent")
@@ -298,34 +322,6 @@ class ChatPage(ctk.CTkFrame):
             wraplength=550, justify="left",
         )
         label.pack(padx=15, pady=10)
-
-    def _add_thinking_bubble(self):
-        """Add a 'thinking...' placeholder that gets replaced."""
-        wrapper = ctk.CTkFrame(self.chat_frame, fg_color="transparent")
-        wrapper.pack(fill="x", padx=10, pady=(2, 6))
-
-        bubble = ctk.CTkFrame(
-            wrapper, fg_color=COLORS["bg_card"],
-            corner_radius=12,
-        )
-        bubble.pack(side="left", padx=(5, 0))
-
-        label = ctk.CTkLabel(
-            bubble, text="💭  Thinking...",
-            font=(FONT_FAMILY, FONT_SIZES["body"]),
-            text_color=COLORS["text_muted"],
-            wraplength=500, justify="left",
-        )
-        label.pack(padx=12, pady=8)
-
-        self._thinking_wrapper = wrapper
-        self._scroll_to_bottom()
-
-    def _remove_thinking_bubble(self):
-        """Remove the thinking placeholder."""
-        if hasattr(self, "_thinking_wrapper"):
-            self._thinking_wrapper.destroy()
-            del self._thinking_wrapper
 
     def _scroll_to_bottom(self):
         """Scroll the chat frame to the bottom."""
@@ -378,8 +374,10 @@ class ChatPage(ctk.CTkFrame):
 
         self._messages.append({"role": "user", "content": text})
 
-        # Show thinking bubble
-        self._add_thinking_bubble()
+        # Create streaming bubble
+        self._stream_label = self._add_assistant_bubble_start()
+        self._stream_chunks: list[str] = []
+        self._first_token = True
 
         # Start generation
         self._generating = True
@@ -390,13 +388,22 @@ class ChatPage(ctk.CTkFrame):
         model = self.model_menu.get()
         messages_copy = list(self._messages)
 
+        def on_token(token: str):
+            def _append():
+                if self._first_token:
+                    self._first_token = False
+                    self._stream_chunks.clear()
+                self._stream_chunks.append(token)
+                self._stream_label.configure(text="".join(self._stream_chunks))
+                self._scroll_to_bottom()
+            self.after(0, _append)
+
         def worker():
             t0 = time.time()
-            result = chat(messages=messages_copy, model=model)
+            result = chat(messages=messages_copy, model=model, on_token=on_token)
             elapsed = time.time() - t0
 
             def _show():
-                self._remove_thinking_bubble()
                 self._generating = False
                 self.btn_send.configure(state="normal")
                 self.btn_stop.configure(state="disabled")
@@ -404,14 +411,16 @@ class ChatPage(ctk.CTkFrame):
                 if result["success"]:
                     reply = result["reply"]
                     self._messages.append({"role": "assistant", "content": reply})
-                    self._add_assistant_bubble(reply)
+                    self._stream_label.configure(text=reply)
                     self.counter_label.configure(
                         text=f"{len(self._messages)} messages  •  "
                              f"response in {elapsed:.1f}s  •  "
                              f"{len(reply.split())} words"
                     )
                 else:
-                    self._add_system_bubble(f"❌  Error: {result['error']}")
+                    self._stream_label.configure(
+                        text=f"❌  Error: {result['error']}"
+                    )
 
                 self._scroll_to_bottom()
 
@@ -424,7 +433,14 @@ class ChatPage(ctk.CTkFrame):
         self._generating = False
         self.btn_send.configure(state="normal")
         self.btn_stop.configure(state="disabled")
-        self._remove_thinking_bubble()
+        # Keep whatever was streamed so far
+        partial = "".join(self._stream_chunks) if hasattr(self, '_stream_chunks') else ""
+        if partial:
+            self._stream_label.configure(text=partial + "\n\n[stopped]")
+            self._messages.append({"role": "assistant", "content": partial})
+        else:
+            if hasattr(self, '_stream_label'):
+                self._stream_label.configure(text="⏹  Stopped")
         self._add_system_bubble("⏹  Generation stopped.")
         self._scroll_to_bottom()
 
