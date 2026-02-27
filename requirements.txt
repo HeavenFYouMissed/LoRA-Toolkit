@@ -1,10 +1,10 @@
-# ═══════════════════════════════════════════
-# LoRA Data Toolkit — Core Dependencies
-# ═══════════════════════════════════════════
+# -----------------------------------------------
+# LoRA Data Toolkit - Core Dependencies
+# -----------------------------------------------
 # These are needed to run the app.
 # For LoRA training deps, use the in-app
 # Setup page (or see README.md).
-# ═══════════════════════════════════════════
+# -----------------------------------------------
 
 # GUI
 customtkinter>=5.2.0
