@@ -190,6 +190,20 @@ class ScraperPage(ctk.CTkFrame):
         if self.app:
             self.app.refresh_stats()
 
+    def handle_file_drop(self, paths):
+        """Read first dropped text file into the preview."""
+        import os
+        for p in paths:
+            try:
+                with open(p, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                self.preview.set_text(content)
+                self.title_field.set(os.path.splitext(os.path.basename(p))[0])
+                self.status.set_success(f"Loaded: {os.path.basename(p)}")
+                return
+            except Exception as e:
+                self.status.set_error(f"Could not read file: {e}")
+
     def _clear(self):
         self.url_field.clear()
         self.title_field.clear()

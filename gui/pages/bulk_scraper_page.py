@@ -324,6 +324,27 @@ class BulkScraperPage(ctk.CTkFrame):
         self._cancel = True
         self.status.set_working("Cancelling after current URL...")
 
+    def handle_file_drop(self, paths):
+        """Load URLs from a dropped text file into the URL list."""
+        import os
+        for p in paths:
+            ext = os.path.splitext(p)[1].lower()
+            if ext in (".txt", ".csv", ".tsv", ".md", ".list"):
+                try:
+                    with open(p, "r", encoding="utf-8", errors="replace") as f:
+                        content = f.read()
+                    existing = self.url_text.get("1.0", "end-1c").strip()
+                    if existing:
+                        self.url_text.insert("end", "\n" + content)
+                    else:
+                        self.url_text.delete("1.0", "end")
+                        self.url_text.insert("1.0", content)
+                    self._update_url_count()
+                    self.status.set_success(f"Loaded URLs from: {os.path.basename(p)}")
+                    return
+                except Exception as e:
+                    self.status.set_error(f"Could not read file: {e}")
+
     def _clear(self):
         self.url_text.delete("1.0", "end")
         self.log_text.configure(state="normal")

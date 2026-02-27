@@ -297,6 +297,10 @@ class ImportPage(ctk.CTkFrame):
         if self.app:
             self.app.refresh_stats()
 
+    def handle_file_drop(self, paths):
+        """Accept files from centralized drag-and-drop."""
+        self._on_files_received(paths)
+
     def _clear(self):
         self.title_field.clear()
         self.preview.clear()

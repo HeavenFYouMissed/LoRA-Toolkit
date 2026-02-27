@@ -9,6 +9,7 @@ from core.database import get_stats
 from core.settings import load_settings
 from core.tray import setup_tray, hide_to_tray, destroy_tray
 from core.hotkeys import register_hotkeys, unregister_all as unregister_hotkeys
+from gui.widgets import setup_global_context_menu, HAS_WINDND
 
 
 def _apply_mica(window):
@@ -75,6 +76,17 @@ class App(ctk.CTk):
 
         # Show default page
         self.show_page("scraper")
+
+        # ─── Global right-click context menus ───────────────
+        setup_global_context_menu(self)
+
+        # ─── Global file drag-and-drop ──────────────────────
+        if HAS_WINDND:
+            import windnd
+            try:
+                windnd.hook_dropfiles(self, func=self._on_global_drop)
+            except Exception:
+                pass
 
         # ─── System Tray ────────────────────────────────────
         self._tray = None
@@ -389,6 +401,25 @@ class App(ctk.CTk):
             hide_to_tray(self)
         else:
             self._shutdown()
+
+    def _on_global_drop(self, file_list):
+        """Central windnd handler — route dropped files to the active page."""
+        import os
+        paths = []
+        for f in file_list:
+            path = f.decode("utf-8", errors="replace") if isinstance(f, bytes) else str(f)
+            if os.path.isfile(path):
+                paths.append(path)
+            elif os.path.isdir(path):
+                for root, _dirs, files in os.walk(path):
+                    for fname in files:
+                        paths.append(os.path.join(root, fname))
+        if not paths:
+            return
+
+        page = self.pages.get(self.current_page)
+        if page and hasattr(page, "handle_file_drop"):
+            page.handle_file_drop(paths)
 
     def _shutdown(self):
         """Full application shutdown."""

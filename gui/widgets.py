@@ -54,6 +54,7 @@ class Tooltip:
 
         self.tip_window = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(True)
+        tw.attributes("-topmost", True)
 
         # Tooltip styling — dark card with accent border
         frame = tk.Frame(
@@ -101,6 +102,70 @@ class Tooltip:
     def update_text(self, new_text):
         """Change tooltip text dynamically."""
         self.text = new_text
+
+
+# ─── Global Right-Click Context Menu ─────────────────────────────
+
+def setup_global_context_menu(root):
+    """
+    Bind right-click Cut / Copy / Paste / Select All to **every**
+    Entry and Text widget in the application (including CTk wrappers).
+    Call once from App.__init__().
+    """
+    _menu = tk.Menu(
+        root, tearoff=0,
+        bg="#1a1f2e", fg="#e6edf3",
+        activebackground="#e94560", activeforeground="#ffffff",
+        font=(FONT_FAMILY, 10),
+        relief="flat", borderwidth=1,
+    )
+
+    def _show(event):
+        w = event.widget
+        is_text = isinstance(w, tk.Text)
+        is_entry = isinstance(w, tk.Entry)
+        if not (is_text or is_entry):
+            return
+
+        w.focus_set()
+        _menu.delete(0, "end")
+
+        # Detect read-only state
+        state = str(w.cget("state"))
+        readonly = state in ("disabled", "readonly")
+
+        if not readonly:
+            _menu.add_command(
+                label="✂  Cut", accelerator="Ctrl+X",
+                command=lambda: w.event_generate("<<Cut>>"),
+            )
+        _menu.add_command(
+            label="📋 Copy", accelerator="Ctrl+C",
+            command=lambda: w.event_generate("<<Copy>>"),
+        )
+        if not readonly:
+            _menu.add_command(
+                label="📄 Paste", accelerator="Ctrl+V",
+                command=lambda: w.event_generate("<<Paste>>"),
+            )
+        _menu.add_separator()
+        if is_text:
+            _menu.add_command(
+                label="🔘 Select All", accelerator="Ctrl+A",
+                command=lambda: w.tag_add("sel", "1.0", "end"),
+            )
+        else:
+            _menu.add_command(
+                label="🔘 Select All", accelerator="Ctrl+A",
+                command=lambda: w.select_range(0, "end"),
+            )
+
+        try:
+            _menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            _menu.grab_release()
+
+    root.bind_all("<Button-3>", _show)
 
 
 class StatusBar(ctk.CTkFrame):
@@ -569,12 +634,8 @@ class DropZone(ctk.CTkFrame):
         self.border.bind("<Enter>", self._on_hover_in)
         self.border.bind("<Leave>", self._on_hover_out)
 
-        # Native Windows drag-and-drop
-        if HAS_WINDND:
-            try:
-                windnd.hook_dropfiles(self.winfo_toplevel(), func=self._on_drop_native)
-            except Exception:
-                pass  # Fails if called before mainloop, will retry
+        # NOTE: Native drag-and-drop is handled centrally by App._on_global_drop
+        # so that drops route to whichever page is currently visible.
 
     def _on_click(self, event=None):
         from tkinter import filedialog

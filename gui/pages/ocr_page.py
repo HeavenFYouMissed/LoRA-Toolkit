@@ -187,6 +187,33 @@ class OcrPage(ctk.CTkFrame):
         if self.app:
             self.app.refresh_stats()
 
+    def handle_file_drop(self, paths):
+        """OCR a dropped image, or load a dropped text file."""
+        import os
+        IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".gif", ".webp"}
+        for p in paths:
+            ext = os.path.splitext(p)[1].lower()
+            if ext in IMAGE_EXTS:
+                # Run OCR on the image in a worker thread
+                self.status.set_working(f"Running OCR on {os.path.basename(p)}...")
+                def do_ocr(file_path=p):
+                    if not self._ensure_tesseract():
+                        return
+                    result = ocr_from_file(file_path)
+                    self.after(0, lambda: self._handle_result(result))
+                threading.Thread(target=do_ocr, daemon=True).start()
+                return
+            else:
+                try:
+                    with open(p, "r", encoding="utf-8", errors="replace") as f:
+                        content = f.read()
+                    self.preview.set_text(content)
+                    self.title_field.set(os.path.splitext(os.path.basename(p))[0])
+                    self.status.set_success(f"Loaded text: {os.path.basename(p)}")
+                    return
+                except Exception:
+                    continue
+
     def _clear(self):
         self.title_field.clear()
         self.preview.clear()
