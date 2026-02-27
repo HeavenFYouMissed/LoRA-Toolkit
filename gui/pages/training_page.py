@@ -918,6 +918,28 @@ class TrainingPage(ctk.CTkFrame):
                                         f"https://download.pytorch.org/whl/cu128")
                         except Exception:
                             pass
+
+                    # Blackwell+ GPUs: xformers has zero operators for
+                    # compute capability >= 10.0, but it's still installed
+                    # fine — the crash only happens at training time.
+                    # The generated script auto-bypasses via sys.modules.
+                    if xf_ok:
+                        try:
+                            r3 = subprocess.run(
+                                [VENV_PYTHON, "-c",
+                                 "import torch; cc=torch.cuda.get_device_capability(); "
+                                 "print(cc[0])"],
+                                capture_output=True, text=True, timeout=15,
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                            )
+                            if r3.returncode == 0:
+                                major = int(r3.stdout.strip())
+                                if major >= 10:
+                                    hint += ("  (auto-bypassed at training "
+                                             "time — SDPA used for sm_"
+                                             f"{major}0)")
+                        except Exception:
+                            pass
                     results.append(("xformers", xf_ok, hint))
                 except importlib.metadata.PackageNotFoundError:
                     results.append(("xformers", False,
@@ -1178,8 +1200,20 @@ class TrainingPage(ctk.CTkFrame):
             f'Source:  {ollama_model}',
             f'Config:  r={rank}  alpha={alpha}  epochs={epochs}  batch={batch}  lr={lr}',
             '"""',
+            'import os, sys, torch',
+            '',
+            '# Blackwell+ GPUs (RTX 50xx compute ≥10.0) have no xformers',
+            '# operators — every fused kernel requires compute ≤9.0.',
+            '# Poisoning sys.modules makes unsloth skip xformers at import',
+            '# and fall back to PyTorch native SDPA (works on ALL GPUs).',
+            'if torch.cuda.is_available():',
+            '    _cc = torch.cuda.get_device_capability()',
+            '    if _cc[0] >= 10:',
+            '        for _m in ("xformers", "xformers.ops", "xformers.ops.fmha"):',
+            '            sys.modules[_m] = None',
+            '',
             'from unsloth import FastLanguageModel',
-            'import torch, json, os',
+            'import json',
             '',
             '# ─── 1. Load Base Model ────────────────────────────────',
             f'print("📥 Loading model: {model_id}")',
