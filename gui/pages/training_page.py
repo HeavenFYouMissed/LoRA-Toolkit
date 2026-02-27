@@ -549,10 +549,11 @@ class TrainingPage(ctk.CTkFrame):
                          "1-3 for large datasets, 3-10 for small.\n"
                          "Too many = overfitting.")
 
-        self.batch_var = ctk.StringVar(value="4")
+        self.batch_var = ctk.StringVar(value="2")
         self._make_param(params_row, "Batch Size", self.batch_var,
                          "Samples per training step.\n"
-                         "2-4 for 8 GB VRAM, 8-16 for 24 GB.\n"
+                         "1-2 for 16 GB VRAM, 4-8 for 24 GB.\n"
+                         "Effective batch = batch x grad_accum (auto).\n"
                          "Smaller = less VRAM but slower.")
 
         self.lr_var = ctk.StringVar(value="2e-4")
@@ -1212,6 +1213,9 @@ class TrainingPage(ctk.CTkFrame):
             '        for _m in ("xformers", "xformers.ops", "xformers.ops.fmha"):',
             '            sys.modules[_m] = None',
             '',
+            '# Reduce CUDA memory fragmentation on 16 GB cards',
+            'os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"',
+            '',
             'from unsloth import FastLanguageModel',
             'import json',
             '',
@@ -1286,7 +1290,7 @@ class TrainingPage(ctk.CTkFrame):
             '',
             'print()',
             f'print("🚀 Starting LoRA training...")',
-            f'print(f"   Epochs: {epochs}  |  Batch: {batch}  |  LR: {lr}")',
+            f'print(f"   Epochs: {epochs}  |  Batch: {batch}  |  Grad accum: {max(1, 16 // int(batch))}  |  LR: {lr}")',
             f'print(f"   Seq len: {seq_len}  |  Samples: {{len(data)}}")',
             'print()',
             '',
@@ -1298,7 +1302,7 @@ class TrainingPage(ctk.CTkFrame):
             f'    max_seq_length={seq_len},',
             '    args=TrainingArguments(',
             f'        per_device_train_batch_size={batch},',
-            '        gradient_accumulation_steps=4,',
+            f'        gradient_accumulation_steps={max(1, 16 // int(batch))},  # effective batch = {int(batch) * max(1, 16 // int(batch))}',
             '        warmup_steps=5,',
             f'        num_train_epochs={epochs},',
             f'        learning_rate={lr},',
@@ -1465,6 +1469,37 @@ class TrainingPage(ctk.CTkFrame):
         if not os.path.exists(script_path):
             self.status.set_error("Generate the training script first!")
             return
+
+        # VRAM safety check — warn user before launching into an OOM crash
+        batch = int(self.batch_var.get())
+        try:
+            import torch as _t
+            if _t.cuda.is_available():
+                vram_gb = _t.cuda.get_device_properties(0).total_mem / (1024**3)
+                model_id = self._get_training_model_id() or ""
+                mid = model_id.lower()
+                # Rough parameter-count guess from model ID
+                param_b = 7  # default guess
+                for tag, size in [("70b", 70), ("72b", 72), ("32b", 32),
+                                  ("30b", 30), ("27b", 27), ("14b", 14),
+                                  ("13b", 13), ("8b", 8), ("9b", 9),
+                                  ("7b", 7), ("4b", 4), ("3b", 3),
+                                  ("1b", 1), ("2b", 2)]:
+                    if tag in mid:
+                        param_b = size
+                        break
+                # 4-bit model: ~0.6 GB per billion params for weights,
+                # plus activations scale with batch * seq_len
+                min_vram = param_b * 0.6 + batch * 1.5
+                if min_vram > vram_gb * 0.95:
+                    self.status.set_error(
+                        f"Likely OOM: ~{param_b}B model + batch={batch} "
+                        f"needs ~{min_vram:.0f} GB but GPU has {vram_gb:.0f} GB. "
+                        f"Lower batch size to {max(1, batch // 2)} and re-generate."
+                    )
+                    return
+        except Exception:
+            pass  # can't check VRAM — proceed anyway
 
         data_path = os.path.join(EXPORTS_DIR, "training_data.jsonl")
         if not os.path.exists(data_path):
