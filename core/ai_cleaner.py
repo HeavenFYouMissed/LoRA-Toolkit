@@ -326,9 +326,27 @@ def chat(
 
 # ─── Internal ──────────────────────────────────────────────────────
 
-def _ollama_generate(prompt: str, model: str, api_url: str) -> str:
-    """Raw HTTP call to Ollama /api/generate (streaming disabled)."""
+def _ollama_generate(
+    prompt: str,
+    model: str,
+    api_url: str,
+    max_tokens: int | None = None,
+) -> str:
+    """Raw HTTP call to Ollama /api/generate (streaming disabled).
+
+    *max_tokens* caps the response length.  When ``None`` the default
+    (dynamic, based on input word count) is used — this avoids the
+    model rambling for 4 096 tokens on a short input and dramatically
+    speeds up cleaning.
+    """
     url = f"{api_url.rstrip('/')}/api/generate"
+
+    # Dynamic token budget: output shouldn't exceed input + 20 % headroom,
+    # with a floor of 512 and a ceiling of 4096.
+    if max_tokens is None:
+        input_words = len(prompt.split())
+        max_tokens = min(4096, max(512, int(input_words * 1.2)))
+
     payload = json.dumps({
         "model": model,
         "prompt": prompt,
@@ -336,7 +354,7 @@ def _ollama_generate(prompt: str, model: str, api_url: str) -> str:
         "options": {
             "temperature": 0.3,
             "top_p": 0.9,
-            "num_predict": 4096,
+            "num_predict": max_tokens,
         },
     }).encode("utf-8")
 
@@ -346,7 +364,7 @@ def _ollama_generate(prompt: str, model: str, api_url: str) -> str:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=180) as resp:
             data = json.loads(resp.read().decode())
         return data.get("response", "").strip()
     except urllib.error.URLError as e:

@@ -29,6 +29,7 @@ def init_db():
             tags TEXT DEFAULT '',
             category TEXT DEFAULT 'general',
             word_count INTEGER DEFAULT 0,
+            cleaned_at TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now', 'localtime')),
             updated_at TEXT DEFAULT (datetime('now', 'localtime'))
         );
@@ -41,6 +42,12 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now', 'localtime'))
         );
     """)
+    # Migration: add cleaned_at column to existing databases
+    try:
+        conn.execute("ALTER TABLE entries ADD COLUMN cleaned_at TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
     conn.commit()
     conn.close()
 
@@ -129,6 +136,28 @@ def delete_multiple_entries(entry_ids):
     conn.execute(f"DELETE FROM entries WHERE id IN ({placeholders})", entry_ids)
     conn.commit()
     conn.close()
+
+
+def mark_cleaned(entry_id):
+    """Stamp an entry as AI-cleaned (sets cleaned_at timestamp)."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_connection()
+    conn.execute(
+        "UPDATE entries SET cleaned_at = ?, updated_at = ? WHERE id = ?",
+        (now, now, entry_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def is_cleaned(entry_id) -> bool:
+    """Check if an entry has been AI-cleaned."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT cleaned_at FROM entries WHERE id = ?", (entry_id,)
+    ).fetchone()
+    conn.close()
+    return bool(row and row[0])
 
 
 def get_entry_count():

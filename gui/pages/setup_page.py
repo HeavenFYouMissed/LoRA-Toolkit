@@ -301,16 +301,25 @@ class SetupPage(ctk.CTkFrame):
             "You need at least ONE model pulled."
         )
 
-        # Recommended models list
+        # Recommended models list — includes uncensored options
         RECOMMENDED_MODELS = [
-            ("llama3.2:3b",   "2 GB",  "Fast & light — great for cleaning"),
-            ("llama3.1:8b",   "4.7 GB","Balanced quality & speed"),
-            ("mistral:7b",    "4.1 GB","Strong general-purpose model"),
-            ("qwen2.5:7b",    "4.7 GB","Excellent multilingual support"),
-            ("gemma2:9b",     "5.4 GB","Google's latest — very capable"),
-            ("codellama:7b",  "3.8 GB","Specialised for code cleaning"),
-            ("phi3:mini",     "2.3 GB","Microsoft Phi-3 — tiny but smart"),
-            ("deepseek-coder:6.7b", "3.8 GB", "Great for code-heavy data"),
+            # ── Fast / Small (best for cleaning speed) ──
+            ("llama3.2:3b",           "2 GB",   "⚡ Fast cleaning — best bang-for-buck"),
+            ("phi3:mini",             "2.3 GB", "⚡ Microsoft Phi-3 — tiny but smart"),
+            ("qwen2.5:3b",           "2 GB",   "⚡ Fast multilingual cleaning"),
+            # ── Balanced (good quality, reasonable speed) ──
+            ("llama3.1:8b",           "4.7 GB", "Balanced quality & speed"),
+            ("mistral:7b",            "4.1 GB", "Strong general-purpose"),
+            ("qwen2.5:7b",           "4.7 GB", "Excellent multilingual"),
+            ("gemma2:9b",             "5.4 GB", "Google — very capable"),
+            # ── Uncensored (won't refuse topics) ──
+            ("dolphin-mistral:7b",    "4.1 GB", "🔓 Uncensored Mistral — great for cleaning"),
+            ("dolphin-llama3:8b",     "4.7 GB", "🔓 Uncensored Llama 3 — recommended"),
+            ("dolphin-phi:2.7b",      "1.6 GB", "🔓 Uncensored + tiny — fastest uncensored"),
+            ("nous-hermes2:10.7b",    "6.1 GB", "🔓 Less filtered — high quality"),
+            # ── Code-focused ──
+            ("codellama:7b",          "3.8 GB", "Code cleaning specialist"),
+            ("deepseek-coder:6.7b",   "3.8 GB", "Great for code-heavy data"),
         ]
 
         self._pulled_models: list[str] = []
@@ -386,13 +395,20 @@ class SetupPage(ctk.CTkFrame):
         )
         rec_label.pack(anchor="w", pady=(8, 2))
 
-        rec_text = "Model               Size      Notes\n" + "\u2500" * 58 + "\n"
+        rec_text = "Model                    Size      Notes\n" + "\u2500" * 68 + "\n"
         for name, size, note in RECOMMENDED_MODELS:
-            rec_text += f"{name:<20}{size:<10}{note}\n"
+            rec_text += f"{name:<25}{size:<10}{note}\n"
         rec_text += (
-            "\n\U0001f449  For 8 GB VRAM: llama3.2:3b or phi3:mini\n"
-            "\U0001f449  For 12-16 GB VRAM: llama3.1:8b, mistral:7b, or qwen2.5:7b\n"
-            "\U0001f449  For 24+ GB VRAM: go wild — try gemma2:9b or bigger"
+            "\n\U0001f9f9  BEST FOR CLEANING:\n"
+            "   \u2022 Fastest: llama3.2:3b, phi3:mini, dolphin-phi:2.7b\n"
+            "   \u2022 Quality: dolphin-mistral:7b, qwen2.5:7b\n"
+            "   \u2022 Uncensored (won't refuse): dolphin-mistral:7b, dolphin-llama3:8b\n"
+            "\n\U0001f4be  VRAM GUIDE:\n"
+            "   \u2022 8 GB: llama3.2:3b, phi3:mini, dolphin-phi:2.7b\n"
+            "   \u2022 12-16 GB: dolphin-mistral:7b, llama3.1:8b, qwen2.5:7b\n"
+            "   \u2022 24+ GB: gemma2:9b, nous-hermes2:10.7b, or bigger\n"
+            "\n\U0001f512  UNCENSORED = model won't refuse sensitive topics\n"
+            "   Important for security research, medical data, adult content, etc."
         )
 
         ctk.CTkLabel(

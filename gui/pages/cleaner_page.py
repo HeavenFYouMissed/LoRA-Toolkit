@@ -13,7 +13,7 @@ from gui.theme import COLORS, FONT_FAMILY, FONT_SIZES
 from gui.widgets import (
     PageHeader, ActionButton, StatusBar, Tooltip, ProgressIndicator,
 )
-from core.database import get_all_entries, get_entry, update_entry
+from core.database import get_all_entries, get_entry, update_entry, mark_cleaned
 from core.ai_cleaner import (
     clean_text, detect_content_type, list_models,
     is_ollama_running, DEFAULT_MODEL, DEFAULT_API_URL,
@@ -413,6 +413,18 @@ class CleanerPage(ctk.CTkFrame):
             )
             cb.pack(side="left", padx=(0, 4))
 
+            # Cleaned indicator dot
+            is_clean = bool(entry.get("cleaned_at"))
+            dot_color = COLORS["accent_green"] if is_clean else COLORS["text_muted"]
+            dot_char = "●" if is_clean else "○"
+            dot_tip = "AI Cleaned" if is_clean else "Not cleaned yet"
+            dot = ctk.CTkLabel(
+                row, text=dot_char, font=(FONT_FAMILY, 10),
+                text_color=dot_color, width=14,
+            )
+            dot.pack(side="left", padx=(0, 3))
+            Tooltip(dot, dot_tip)
+
             icon = SOURCE_ICONS.get(entry["source_type"], "📄")
             ctk.CTkLabel(
                 row, text=icon, font=(FONT_FAMILY, 11),
@@ -734,6 +746,7 @@ class CleanerPage(ctk.CTkFrame):
             return
 
         update_entry(self._current_entry["id"], content=cleaned)
+        mark_cleaned(self._current_entry["id"])
         self._saved += 1
         self.status.set_success(f"Updated #{self._current_entry['id']} with cleaned text")
         if self.app:
@@ -748,6 +761,7 @@ class CleanerPage(ctk.CTkFrame):
             return
 
         update_entry(self._current_entry["id"], content=edited)
+        mark_cleaned(self._current_entry["id"])
         self._saved += 1
         self.status.set_success(f"Saved edited text for #{self._current_entry['id']}")
         if self.app:
@@ -781,6 +795,8 @@ class CleanerPage(ctk.CTkFrame):
             f"Batch complete: {total} entries reviewed, "
             f"{saved} saved, {skipped} skipped"
         )
+        # Refresh entry list so cleaned dots update
+        self._load_entries()
 
     # ───────────────────────────────────────────────────────────────
     # REFRESH (called when page becomes visible)
