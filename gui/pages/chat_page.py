@@ -17,9 +17,11 @@ from gui.widgets import (
     PageHeader, ActionButton, StatusBar, Tooltip, ProgressIndicator,
 )
 from core.ai_cleaner import (
-    chat, list_models, is_ollama_running,
+    chat, list_models, is_ollama_running, preload_model, pull_model,
     DEFAULT_MODEL, DEFAULT_API_URL,
 )
+from core.settings import load_settings
+from core.scraper import scrape_url
 
 
 class ChatPage(ctk.CTkFrame):
@@ -28,6 +30,7 @@ class ChatPage(ctk.CTkFrame):
         self.app = app
         self._messages: list[dict] = []    # full conversation history
         self._generating = False
+        self._settings = load_settings()
         self._build_ui()
 
     # ───────────────────────────────────────────────────────────────
@@ -142,6 +145,7 @@ class ChatPage(ctk.CTkFrame):
             "👋  Welcome to AI Chat!\n\n"
             "Chat with your local Ollama model about anything — "
             "training data, LoRA configs, data cleaning strategies, or just ask questions.\n\n"
+            "🌐  Type /fetch <url> to load a webpage into the conversation.\n"
             "💡 Tip: Set a system prompt above to specialise the AI for your domain."
         )
 
@@ -195,6 +199,11 @@ class ChatPage(ctk.CTkFrame):
         # ─── Initial connection check ───────────────────────
         self.after(300, self._check_ollama)
 
+    def refresh(self):
+        """Reload settings and re-check Ollama connection."""
+        self._settings = load_settings()
+        self._check_ollama()
+
     # ───────────────────────────────────────────────────────────────
     # CONNECTION & MODELS
     # ───────────────────────────────────────────────────────────────
@@ -213,17 +222,65 @@ class ChatPage(ctk.CTkFrame):
                 text=f"Ollama connected  •  {len(models)} model{'s' if len(models) != 1 else ''}",
                 text_color=COLORS["accent_green"],
             )
+
+            # Determine the preferred model from settings
+            pref_model = self._settings.get("ollama_model", DEFAULT_MODEL)
+
             if models:
                 self.model_menu.configure(values=models)
                 current = self.model_menu.get()
-                if current not in models:
+                # Try to select preferred model
+                if pref_model in models:
+                    self.model_menu.set(pref_model)
+                elif current not in models:
                     self.model_menu.set(models[0])
+
+            # Auto-pull if preferred model not found
+            if pref_model not in models:
+                self._auto_pull_model(pref_model)
         else:
             self.conn_dot.configure(text_color=COLORS["error"])
             self.conn_label.configure(
                 text="Ollama not running — start it from Setup page or run 'ollama serve'",
                 text_color=COLORS["error"],
             )
+
+    def _auto_pull_model(self, model_name: str):
+        """Auto-pull the default model in background when not found."""
+        self.conn_label.configure(
+            text=f"Pulling {model_name}...",
+            text_color=COLORS["warning"],
+        )
+
+        def _pull():
+            def on_progress(status):
+                self.after(0, lambda s=status: self.conn_label.configure(
+                    text=f"Pulling {model_name}: {s}"
+                ))
+
+            result = pull_model(model_name, on_progress=on_progress)
+
+            def _done():
+                if result["success"]:
+                    self.conn_label.configure(
+                        text=f"✅  {model_name} pulled successfully!",
+                        text_color=COLORS["accent_green"],
+                    )
+                    # Refresh model list and select it
+                    models = list_models()
+                    if models:
+                        self.model_menu.configure(values=models)
+                        if model_name in models:
+                            self.model_menu.set(model_name)
+                else:
+                    self.conn_label.configure(
+                        text=f"⚠ Pull failed: {result['error'][:60]}",
+                        text_color=COLORS["error"],
+                    )
+
+            self.after(0, _done)
+
+        threading.Thread(target=_pull, daemon=True).start()
 
     def _refresh_models(self):
         self.conn_label.configure(text="Refreshing...", text_color=COLORS["text_muted"])
@@ -349,6 +406,13 @@ class ChatPage(ctk.CTkFrame):
         if not text:
             return
 
+        # ── Handle /fetch URL command ────────────────────────
+        if text.lower().startswith("/fetch "):
+            url = text[7:].strip()
+            if url:
+                self._fetch_url(url)
+                return
+
         if not is_ollama_running():
             self._add_system_bubble(
                 "⚠️  Ollama is not running!\n\n"
@@ -388,6 +452,10 @@ class ChatPage(ctk.CTkFrame):
         model = self.model_menu.get()
         messages_copy = list(self._messages)
 
+        # Context window from settings (0 = auto)
+        settings_ctx = self._settings.get("ollama_num_ctx", 0)
+        num_ctx = settings_ctx if settings_ctx > 0 else None
+
         def on_token(token: str):
             def _append():
                 if self._first_token:
@@ -400,7 +468,10 @@ class ChatPage(ctk.CTkFrame):
 
         def worker():
             t0 = time.time()
-            result = chat(messages=messages_copy, model=model, on_token=on_token)
+            result = chat(
+                messages=messages_copy, model=model,
+                on_token=on_token, num_ctx=num_ctx,
+            )
             elapsed = time.time() - t0
 
             def _show():
@@ -427,6 +498,47 @@ class ChatPage(ctk.CTkFrame):
             self.after(0, _show)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _fetch_url(self, url: str):
+        """Fetch a URL's content and inject it into the conversation context."""
+        self.user_input.delete("1.0", "end")
+        self._add_user_bubble(f"/fetch {url}")
+        self._add_system_bubble(f"🌐  Fetching {url} ...")
+        self._scroll_to_bottom()
+
+        def _bg():
+            result = scrape_url(url)
+            def _done():
+                if result["success"] and result["content"]:
+                    content = result["content"]
+                    words = len(content.split())
+                    # Truncate to 6k words max for context injection
+                    if words > 6000:
+                        content = " ".join(content.split()[:6000]) + "\n\n[... truncated ...]"
+                        words = 6000
+
+                    title = result.get("title", url)
+                    # Inject as a system message so AI sees it
+                    context_msg = (
+                        f"The user fetched this webpage. Use it to answer their questions.\n\n"
+                        f"── {title} ──\n{content}"
+                    )
+                    self._messages.append({"role": "system", "content": context_msg})
+
+                    self._add_system_bubble(
+                        f"✅  Loaded: {title}\n"
+                        f"{words:,} words added to context.\n\n"
+                        "💡 Now ask a question about this page!"
+                    )
+                else:
+                    error = result.get("error", "Unknown error")
+                    self._add_system_bubble(f"❌  Failed to fetch URL: {error}")
+
+                self._update_counter()
+                self._scroll_to_bottom()
+            self.after(0, _done)
+
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _stop_generating(self):
         """Cancel the current generation (best-effort)."""

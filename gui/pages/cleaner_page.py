@@ -16,8 +16,9 @@ from gui.widgets import (
 from core.database import get_all_entries, get_entry, update_entry, mark_cleaned
 from core.ai_cleaner import (
     clean_text, detect_content_type, list_models,
-    is_ollama_running, preload_model, DEFAULT_MODEL, DEFAULT_API_URL,
+    is_ollama_running, preload_model, pull_model, DEFAULT_MODEL, DEFAULT_API_URL,
 )
+from core.settings import load_settings
 
 
 class CleanerPage(ctk.CTkFrame):
@@ -30,6 +31,7 @@ class CleanerPage(ctk.CTkFrame):
         self._current_entry = None
         self._attempt = 1
         self._cleaning = False
+        self._settings = load_settings()
         self._build_ui()
 
     # ───────────────────────────────────────────────────────────────
@@ -366,23 +368,78 @@ class CleanerPage(ctk.CTkFrame):
                 text=f"Ollama connected  •  {len(models)} model{'s' if len(models) != 1 else ''}",
                 text_color=COLORS["accent_green"],
             )
+
+            # Determine the preferred model from settings
+            pref_model = self._settings.get("ollama_model", DEFAULT_MODEL)
+
             if models:
                 self.model_menu.configure(values=models)
                 # Keep current selection if still valid
                 current = self.model_menu.get()
-                if current not in models:
+                if pref_model in models:
+                    self.model_menu.set(pref_model)
+                elif current not in models:
                     self.model_menu.set(models[0])
-            # Preload selected model into VRAM so first clean is instant
-            threading.Thread(
-                target=lambda: preload_model(self.model_menu.get()),
-                daemon=True,
-            ).start()
+
+            # Auto-pull if preferred model not found
+            if pref_model not in models:
+                self._auto_pull_model(pref_model)
+            else:
+                # Preload selected model into VRAM so first clean is instant
+                threading.Thread(
+                    target=lambda: preload_model(self.model_menu.get()),
+                    daemon=True,
+                ).start()
         else:
             self.conn_dot.configure(text_color=COLORS["error"])
             self.conn_label.configure(
                 text="Ollama not running — start it first (ollama serve)",
                 text_color=COLORS["error"],
             )
+
+    def _auto_pull_model(self, model_name: str):
+        """Auto-pull the default model in background when not found."""
+        self.conn_label.configure(
+            text=f"Pulling {model_name}...",
+            text_color=COLORS["warning"],
+        )
+        self.conn_dot.configure(text_color=COLORS["warning"])
+
+        def _pull():
+            def on_progress(status):
+                self.after(0, lambda s=status: self.conn_label.configure(
+                    text=f"Pulling {model_name}: {s}"
+                ))
+
+            result = pull_model(model_name, on_progress=on_progress)
+
+            def _done():
+                if result["success"]:
+                    self.conn_dot.configure(text_color=COLORS["accent_green"])
+                    self.conn_label.configure(
+                        text=f"✅  {model_name} ready!",
+                        text_color=COLORS["accent_green"],
+                    )
+                    # Refresh model list and select + preload
+                    models = list_models()
+                    if models:
+                        self.model_menu.configure(values=models)
+                        if model_name in models:
+                            self.model_menu.set(model_name)
+                    threading.Thread(
+                        target=lambda: preload_model(model_name),
+                        daemon=True,
+                    ).start()
+                else:
+                    self.conn_dot.configure(text_color=COLORS["error"])
+                    self.conn_label.configure(
+                        text=f"⚠ Pull failed: {result['error'][:60]}",
+                        text_color=COLORS["error"],
+                    )
+
+            self.after(0, _done)
+
+        threading.Thread(target=_pull, daemon=True).start()
 
     def _refresh_models(self):
         self.conn_label.configure(text="Refreshing...", text_color=COLORS["text_muted"])
@@ -829,4 +886,5 @@ class CleanerPage(ctk.CTkFrame):
     # ───────────────────────────────────────────────────────────────
 
     def refresh(self):
+        self._settings = load_settings()
         self._check_ollama()

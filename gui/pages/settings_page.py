@@ -205,14 +205,14 @@ class SettingsPage(ctk.CTkFrame):
             text_color=COLORS["text_primary"],
             border_color=COLORS["border"],
             border_width=1, corner_radius=8, height=32,
-            placeholder_text="llama3.2:3b",
+            placeholder_text="qwen3-vl:4b-instruct",
         )
         self.ollama_model_entry.pack(side="left")
         self.ollama_model_entry.insert(0, self.settings.get("ollama_model", DEFAULTS["ollama_model"]))
         Tooltip(self.ollama_model_entry,
                 "Default Ollama model for AI Cleaner and Chat.\n"
-                "Must already be pulled (see Setup page).\n"
-                "Examples: llama3.2:3b, mistral:7b, qwen2.5:7b")
+                "Auto-pulled on first run if not available.\n"
+                "Examples: qwen3-vl:4b-instruct, llama3.2:3b, mistral:7b")
 
         ai_hint = ctk.CTkLabel(
             ai_frame,
@@ -222,7 +222,42 @@ class SettingsPage(ctk.CTkFrame):
             text_color=COLORS["text_muted"],
             wraplength=600, justify="left",
         )
-        ai_hint.pack(anchor="w", padx=15, pady=(0, 12))
+        ai_hint.pack(anchor="w", padx=15, pady=(0, 4))
+
+        # Context window size
+        ctx_row = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        ctx_row.pack(fill="x", padx=15, pady=(0, 12))
+
+        ctk.CTkLabel(
+            ctx_row, text="Context Window:",
+            font=(FONT_FAMILY, FONT_SIZES["body"], "bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 10))
+
+        self.ctx_var = ctk.IntVar(value=self.settings.get("ollama_num_ctx", 0))
+        ctx_slider = ctk.CTkSlider(
+            ctx_row, from_=0, to=32768,
+            variable=self.ctx_var,
+            width=220, number_of_steps=32,
+            fg_color=COLORS["bg_input"],
+            progress_color=COLORS["accent"],
+            button_color=COLORS["accent"],
+            button_hover_color=COLORS["accent_hover"],
+        )
+        ctx_slider.pack(side="left", padx=(0, 8))
+        Tooltip(ctx_slider,
+                "Maximum context window size for Ollama.\n"
+                "0 = Auto (recommended) — calculated from content.\n"
+                "Higher values let the AI see more text at once\n"
+                "but use more VRAM. Max 32768 tokens.")
+
+        self.ctx_label = ctk.CTkLabel(
+            ctx_row, text=self._ctx_display(self.ctx_var.get()),
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            text_color=COLORS["text_muted"], width=80,
+        )
+        self.ctx_label.pack(side="left")
+        self.ctx_var.trace_add("write", self._update_ctx_label)
 
         # ─── Export Defaults Section ────────────────────────
         self._section_label(container, "🚀  Export Defaults")
@@ -372,6 +407,22 @@ class SettingsPage(ctk.CTkFrame):
         except Exception:
             pass
 
+    @staticmethod
+    def _ctx_display(val: int) -> str:
+        """Pretty-print context window value."""
+        if val <= 0:
+            return "Auto"
+        if val >= 1024:
+            return f"{val // 1024}k"
+        return str(val)
+
+    def _update_ctx_label(self, *args):
+        try:
+            val = self.ctx_var.get()
+            self.ctx_label.configure(text=self._ctx_display(val))
+        except Exception:
+            pass
+
     def _gather_settings(self) -> dict:
         """Collect current UI values into a settings dict."""
         return {
@@ -384,6 +435,7 @@ class SettingsPage(ctk.CTkFrame):
             "tesseract_path": self.tess_entry.get().strip(),
             "ollama_url": self.ollama_url_entry.get().strip() or DEFAULTS["ollama_url"],
             "ollama_model": self.ollama_model_entry.get().strip() or DEFAULTS["ollama_model"],
+            "ollama_num_ctx": self.ctx_var.get(),
             "default_chunk_size": self._safe_int(self.chunk_entry.get(), 512),
             "default_system_prompt": self.prompt_text.get("1.0", "end-1c").strip(),
             "request_timeout": self._safe_int(self.timeout_entry.get(), 30),
@@ -446,6 +498,8 @@ class SettingsPage(ctk.CTkFrame):
         self.ollama_url_entry.insert(0, DEFAULTS["ollama_url"])
         self.ollama_model_entry.delete(0, "end")
         self.ollama_model_entry.insert(0, DEFAULTS["ollama_model"])
+
+        self.ctx_var.set(DEFAULTS["ollama_num_ctx"])
 
         self.chunk_entry.delete(0, "end")
         self.chunk_entry.insert(0, str(DEFAULTS["default_chunk_size"]))

@@ -22,9 +22,11 @@ from gui.theme import COLORS, FONT_FAMILY, FONT_SIZES, SOURCE_ICONS
 from gui.widgets import ActionButton, Tooltip
 from core.database import get_entry, add_entry
 from core.ai_cleaner import (
-    chat, list_models, is_ollama_running, preload_model,
+    chat, list_models, is_ollama_running, preload_model, pull_model,
     DEFAULT_MODEL,
 )
+from core.settings import load_settings
+from core.scraper import scrape_url
 from config import DATA_DIR
 
 
@@ -99,6 +101,7 @@ class DataChatPopup(ctk.CTkToplevel):
     def __init__(self, parent, selected_entry_ids: list[int], app=None):
         super().__init__(parent)
         self.app = app
+        self._settings = load_settings()
         self.title("💬  Chat with Data")
         self.geometry("1000x700")
         self.minsize(800, 500)
@@ -261,6 +264,7 @@ class DataChatPopup(ctk.CTkToplevel):
             "  • Summarise all attached content\n"
             "  • Generate Alpaca/ShareGPT training pairs\n"
             "  • Rewrite or merge entries\n\n"
+            "🌐  Type /fetch <url> to load a webpage into context.\n"
             "💡 Tip: Use 'Save Reply to Library' to capture AI output as a new entry."
         )
 
@@ -324,21 +328,70 @@ class DataChatPopup(ctk.CTkToplevel):
                 text=f"✅ Ollama connected  •  {len(models)} models",
                 text_color=COLORS["accent_green"],
             )
+
+            pref_model = self._settings.get("ollama_model", DEFAULT_MODEL)
+
             if models:
                 self.model_menu.configure(values=models)
                 cur = self.model_menu.get()
-                if cur not in models:
+                if pref_model in models:
+                    self.model_menu.set(pref_model)
+                elif cur not in models:
                     self.model_menu.set(models[0])
-            # Preload selected model
-            threading.Thread(
-                target=lambda: preload_model(self.model_menu.get()),
-                daemon=True,
-            ).start()
+
+            # Auto-pull if preferred model not found
+            if pref_model not in models:
+                self._auto_pull_model(pref_model)
+            else:
+                # Preload selected model
+                threading.Thread(
+                    target=lambda: preload_model(self.model_menu.get()),
+                    daemon=True,
+                ).start()
         else:
             self.conn_label.configure(
                 text="❌ Ollama not running — start from Setup page",
                 text_color=COLORS["error"],
             )
+
+    def _auto_pull_model(self, model_name: str):
+        """Auto-pull the default model in background when not found."""
+        self.conn_label.configure(
+            text=f"⬇️ Pulling {model_name}...",
+            text_color=COLORS["warning"],
+        )
+
+        def _pull():
+            def on_progress(status):
+                self.after(0, lambda s=status: self.conn_label.configure(
+                    text=f"Pulling {model_name}: {s}"
+                ))
+
+            result = pull_model(model_name, on_progress=on_progress)
+
+            def _done():
+                if result["success"]:
+                    self.conn_label.configure(
+                        text=f"✅  {model_name} ready!",
+                        text_color=COLORS["accent_green"],
+                    )
+                    models = list_models()
+                    if models:
+                        self.model_menu.configure(values=models)
+                        if model_name in models:
+                            self.model_menu.set(model_name)
+                    threading.Thread(
+                        target=lambda: preload_model(model_name),
+                        daemon=True,
+                    ).start()
+                else:
+                    self.conn_label.configure(
+                        text=f"⚠ Pull failed: {result['error'][:50]}",
+                        text_color=COLORS["error"],
+                    )
+            self.after(0, _done)
+
+        threading.Thread(target=_pull, daemon=True).start()
 
     # ──────────────────────────────────────────────────────────────
     # Chat bubbles
@@ -403,6 +456,13 @@ class DataChatPopup(ctk.CTkToplevel):
         if not text:
             return
 
+        # ── Handle /fetch URL command ────────────────────────
+        if text.lower().startswith("/fetch "):
+            url = text[7:].strip()
+            if url:
+                self._fetch_url(url)
+                return
+
         if not is_ollama_running():
             self._add_system_bubble(
                 "⚠️  Ollama is not running!\n"
@@ -431,13 +491,16 @@ class DataChatPopup(ctk.CTkToplevel):
         model = self.model_menu.get()
         messages_copy = list(self._messages)
 
+        # Context window from settings (0 = auto)
+        settings_ctx = self._settings.get("ollama_num_ctx", 0)
+        num_ctx = settings_ctx if settings_ctx > 0 else None
+
         def on_token(token: str):
             def _append():
                 if self._first_token:
                     self._first_token = False
                     self._stream_chunks.clear()
                 self._stream_chunks.append(token)
-                # Update label with accumulated text
                 self._stream_label.configure(
                     text="".join(self._stream_chunks)
                 )
@@ -450,6 +513,7 @@ class DataChatPopup(ctk.CTkToplevel):
                 messages=messages_copy,
                 model=model,
                 on_token=on_token,
+                num_ctx=num_ctx,
             )
             elapsed = time.time() - t0
 
@@ -462,7 +526,6 @@ class DataChatPopup(ctk.CTkToplevel):
                     reply = result["reply"]
                     self._last_reply = reply
                     self._messages.append({"role": "assistant", "content": reply})
-                    # Final update of the label (streaming may have partial)
                     self._stream_label.configure(text=reply)
                     self.counter_label.configure(
                         text=f"{len(self._messages)} msgs  •  "
@@ -477,6 +540,45 @@ class DataChatPopup(ctk.CTkToplevel):
             self.after(0, _done)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _fetch_url(self, url: str):
+        """Fetch a URL's content and inject it into the conversation context."""
+        self.user_input.delete("1.0", "end")
+        self._add_user_bubble(f"/fetch {url}")
+        self._add_system_bubble(f"🌐  Fetching {url} ...")
+        self._scroll_to_bottom()
+
+        def _bg():
+            result = scrape_url(url)
+            def _done():
+                if result["success"] and result["content"]:
+                    content = result["content"]
+                    words = len(content.split())
+                    if words > 6000:
+                        content = " ".join(content.split()[:6000]) + "\n\n[... truncated ...]"
+                        words = 6000
+
+                    title = result.get("title", url)
+                    context_msg = (
+                        f"The user fetched this webpage. Use it to answer their questions.\n\n"
+                        f"── {title} ──\n{content}"
+                    )
+                    self._messages.append({"role": "system", "content": context_msg})
+
+                    self._add_system_bubble(
+                        f"✅  Loaded: {title}\n"
+                        f"{words:,} words added to context.\n\n"
+                        "💡 Now ask a question about this page!"
+                    )
+                else:
+                    error = result.get("error", "Unknown error")
+                    self._add_system_bubble(f"❌  Failed to fetch URL: {error}")
+
+                self._update_counter()
+                self._scroll_to_bottom()
+            self.after(0, _done)
+
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _stop(self):
         self._generating = False

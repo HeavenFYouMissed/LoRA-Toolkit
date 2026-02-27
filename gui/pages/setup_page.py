@@ -304,6 +304,7 @@ class SetupPage(ctk.CTkFrame):
         # Recommended models list — includes uncensored options
         RECOMMENDED_MODELS = [
             # ── Fast / Small (best for cleaning speed) ──
+            ("qwen3-vl:4b-instruct",  "3.1 GB", "⭐ Default — vision + instruct, excellent"),
             ("llama3.2:3b",           "2 GB",   "⚡ Fast cleaning — best bang-for-buck"),
             ("phi3:mini",             "2.3 GB", "⚡ Microsoft Phi-3 — tiny but smart"),
             ("qwen2.5:3b",           "2 GB",   "⚡ Fast multilingual cleaning"),

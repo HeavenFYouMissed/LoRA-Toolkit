@@ -37,7 +37,8 @@ DEFAULTS = {
 
     # AI Cleaner (Ollama)
     "ollama_url": "http://localhost:11434",
-    "ollama_model": "llama3.2:3b",
+    "ollama_model": "qwen3-vl:4b-instruct",
+    "ollama_num_ctx": 0,  # 0 = auto-calculate based on content
 
     # Appearance
     "accent_color": "#e94560",

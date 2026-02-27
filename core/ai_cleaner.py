@@ -16,7 +16,7 @@ import urllib.error
 
 # ─── Defaults ──────────────────────────────────────────────────────
 
-DEFAULT_MODEL = "llama3.2:3b"
+DEFAULT_MODEL = "qwen3-vl:4b-instruct"
 DEFAULT_API_URL = "http://localhost:11434"
 MAX_INPUT_CHARS = 12_000  # truncate monster files
 
@@ -305,6 +305,59 @@ def preload_model(model: str = DEFAULT_MODEL, api_url: str = DEFAULT_API_URL):
         urllib.request.urlopen(req, timeout=30)
     except Exception:
         pass
+
+
+def pull_model(
+    model: str = DEFAULT_MODEL,
+    api_url: str = DEFAULT_API_URL,
+    on_progress=None,
+) -> dict:
+    """Pull (download) a model via Ollama's /api/pull endpoint.
+
+    *on_progress*: optional callback ``fn(status_str)`` called with
+                   progress lines like "pulling abc123... 45%".
+
+    Returns dict:
+        success: bool
+        error:   str (empty on success)
+    """
+    url = f"{api_url.rstrip('/')}/api/pull"
+    payload = json.dumps({
+        "name": model,
+        "stream": on_progress is not None,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=600) as resp:
+            if on_progress is None:
+                data = json.loads(resp.read().decode())
+                status = data.get("status", "")
+                if "error" in status.lower():
+                    return {"success": False, "error": status}
+                return {"success": True, "error": ""}
+            # Streaming progress
+            for raw_line in resp:
+                line = raw_line.decode("utf-8").strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                status = obj.get("status", "")
+                if on_progress and status:
+                    on_progress(status)
+                if obj.get("error"):
+                    return {"success": False, "error": obj["error"]}
+            return {"success": True, "error": ""}
+    except urllib.error.URLError as e:
+        return {"success": False, "error": f"Cannot reach Ollama: {e}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def chat(
