@@ -9,6 +9,7 @@ Basic users only need Step 1.  Steps 2-3 are for LoRA fine-tuning.
 """
 
 from __future__ import annotations
+import importlib, importlib.metadata
 import os, platform, subprocess, sys, threading, re
 import customtkinter as ctk
 
@@ -617,16 +618,21 @@ class SetupPage(ctk.CTkFrame):
         threading.Thread(target=_do, daemon=True).start()
 
     def _probe_list(self, pkgs):
-        """Return (installed_set, missing_set) for a list of pip names."""
+        """Return (installed_set, missing_set) for a list of pip names.
+
+        Uses importlib.metadata (pip's package registry) instead of
+        __import__ so that packages installed mid-session are detected
+        without needing a restart.
+        """
+        # Flush finder caches so newly-installed packages are visible
+        importlib.invalidate_caches()
+
         ok, miss = set(), set()
         for pkg in pkgs:
-            mod = self._IMPORT_ALIASES.get(
-                pkg.lower(), pkg.replace("-", "_").lower(),
-            )
             try:
-                __import__(mod)
+                importlib.metadata.distribution(pkg)
                 ok.add(pkg)
-            except ImportError:
+            except importlib.metadata.PackageNotFoundError:
                 miss.add(pkg)
         return ok, miss
 
