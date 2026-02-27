@@ -500,10 +500,10 @@ class TrainingPage(ctk.CTkFrame):
         ).pack(side="left", padx=(0, 8))
 
         self._presets = {
-            "⚡ Quick":    {"rank": "8",  "alpha": "16",  "epochs": "1", "batch": "8",  "lr": "2e-4",  "seq": "1024"},
-            "⚖ Balanced": {"rank": "16", "alpha": "32",  "epochs": "3", "batch": "4",  "lr": "2e-4",  "seq": "2048"},
-            "🎯 Quality": {"rank": "32", "alpha": "64",  "epochs": "5", "batch": "2",  "lr": "1e-4",  "seq": "2048"},
-            "🔬 Max":     {"rank": "64", "alpha": "128", "epochs": "8", "batch": "1",  "lr": "5e-5",  "seq": "4096"},
+            "⚡ Quick":    {"rank": "8",  "alpha": "16",  "epochs": "1", "batch": "4",  "lr": "2e-4",  "seq": "512"},
+            "⚖ Balanced": {"rank": "16", "alpha": "32",  "epochs": "3", "batch": "2",  "lr": "2e-4",  "seq": "1024"},
+            "🎯 Quality": {"rank": "32", "alpha": "64",  "epochs": "5", "batch": "1",  "lr": "1e-4",  "seq": "1024"},
+            "🔬 Max":     {"rank": "64", "alpha": "128", "epochs": "8", "batch": "1",  "lr": "5e-5",  "seq": "2048"},
         }
 
         self._preset_btns = {}
@@ -522,9 +522,9 @@ class TrainingPage(ctk.CTkFrame):
 
         # Tooltip descriptions for presets
         tips = [
-            ("⚡ Quick",    "Fast test run.\nr=8  α=16  1 epoch  batch=8\nBest for: checking if training works"),
-            ("⚖ Balanced", "Good default.\nr=16  α=32  3 epochs  batch=4\nBest for: most fine-tuning tasks"),
-            ("🎯 Quality", "Higher quality, slower.\nr=32  α=64  5 epochs  batch=2\nBest for: important models, 16+ GB VRAM"),
+            ("⚡ Quick",    "Fast test run.\nr=8  α=16  1 epoch  batch=4\nBest for: checking if training works"),
+            ("⚖ Balanced", "Good default.\nr=16  α=32  3 epochs  batch=2\nBest for: most fine-tuning tasks"),
+            ("🎯 Quality", "Higher quality, slower.\nr=32  α=64  5 epochs  batch=1\nBest for: important models, 16 GB VRAM"),
             ("🔬 Max",     "Maximum capacity.\nr=64  α=128  8 epochs  batch=1\nBest for: large datasets, 24+ GB VRAM"),
         ]
         for lbl, tip in tips:
@@ -563,10 +563,10 @@ class TrainingPage(ctk.CTkFrame):
                          "Lower (1e-4) = slower but more precise.\n"
                          "Higher (5e-4) = faster but may overshoot.")
 
-        self.seq_var = ctk.StringVar(value="2048")
+        self.seq_var = ctk.StringVar(value="1024")
         self._make_param(params_row, "Max Seq Len", self.seq_var,
                          "Max token length per sample.\n"
-                         "2048 standard, 4096 for longer docs.\n"
+                         "1024 for 16 GB, 2048 for 24 GB.\n"
                          "Higher = more VRAM needed.")
 
         # ─ Output Config ───────────────────────────────────
@@ -1489,13 +1489,19 @@ class TrainingPage(ctk.CTkFrame):
                         param_b = size
                         break
                 # 4-bit model: ~0.6 GB per billion params for weights,
-                # plus activations scale with batch * seq_len
-                min_vram = param_b * 0.6 + batch * 1.5
-                if min_vram > vram_gb * 0.95:
+                # plus activations & logits scale with batch * seq_len.
+                # The fused CE loss needs extra VRAM for vocab logits.
+                seq_len = int(self.seq_var.get())
+                min_vram = (param_b * 0.6
+                            + batch * (seq_len / 1024) * 2.0
+                            + 2.0)  # optimizer states + overhead
+                if min_vram > vram_gb * 0.90:
+                    suggest_b = max(1, batch // 2)
+                    suggest_s = min(seq_len, 1024)
                     self.status.set_error(
-                        f"Likely OOM: ~{param_b}B model + batch={batch} "
+                        f"Likely OOM: ~{param_b}B model + batch={batch} + seq={seq_len} "
                         f"needs ~{min_vram:.0f} GB but GPU has {vram_gb:.0f} GB. "
-                        f"Lower batch size to {max(1, batch // 2)} and re-generate."
+                        f"Try batch={suggest_b} seq_len={suggest_s} and re-generate."
                     )
                     return
         except Exception:
