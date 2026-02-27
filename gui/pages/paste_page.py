@@ -93,6 +93,12 @@ class PastePage(ctk.CTkFrame):
         try:
             text = self.clipboard_get()
             if text:
+                # Sanitise clipboard text (PDFs copy with null bytes / control chars)
+                text = text.replace("\x00", "")
+                text = "".join(
+                    ch for ch in text
+                    if ch == "\n" or ch == "\r" or ch == "\t" or (ord(ch) >= 32)
+                )
                 self.preview.set_text(text)
                 self.status.set_success(f"Pasted {len(text.split()):,} words from clipboard")
             else:
@@ -135,16 +141,21 @@ class PastePage(ctk.CTkFrame):
             # Keep tags and category for rapid entry
 
     def handle_file_drop(self, paths):
-        """Read first dropped text file into the editor."""
+        """Read first dropped file into the editor (supports PDF, TXT, HTML, CSV, code, etc.)."""
         import os
+        from core.file_reader import read_file
         for p in paths:
             try:
-                with open(p, "r", encoding="utf-8", errors="replace") as f:
-                    content = f.read()
-                self.preview.set_text(content)
-                self.title_field.set(os.path.splitext(os.path.basename(p))[0])
-                self.source_field.set(p)
-                self.status.set_success(f"Loaded: {os.path.basename(p)}")
+                result = read_file(p)
+                if result["success"]:
+                    self.preview.set_text(result["content"])
+                    title = os.path.splitext(os.path.basename(p))[0]
+                    self.title_field.set(title)
+                    self.source_field.set(p)
+                    wc = len(result["content"].split())
+                    self.status.set_success(f"Loaded: {os.path.basename(p)}  ({wc:,} words)")
+                else:
+                    self.status.set_error(result["error"])
                 return
             except Exception as e:
                 self.status.set_error(f"Could not read file: {e}")

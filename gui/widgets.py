@@ -243,6 +243,13 @@ class ContentPreview(ctk.CTkFrame):
         return self.textbox.get("1.0", "end-1c").strip()
 
     def set_text(self, text):
+        # Sanitise: strip null bytes and most control chars that crash Tkinter
+        if text:
+            text = text.replace("\x00", "")
+            text = "".join(
+                ch for ch in text
+                if ch == "\n" or ch == "\r" or ch == "\t" or (ord(ch) >= 32)
+            )
         self.textbox.delete("1.0", "end")
         self.textbox.insert("1.0", text)
         self._update_word_count()
