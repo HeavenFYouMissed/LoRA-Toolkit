@@ -18,6 +18,13 @@ import threading
 import customtkinter as ctk
 
 from gui.theme import COLORS, FONT_FAMILY, FONT_SIZES
+
+# sys.executable may be pythonw.exe when launched as a GUI app.
+# Subprocess calls need python.exe so consoles and -c work properly.
+_exe = sys.executable
+if _exe.endswith("pythonw.exe"):
+    _exe = _exe[:-len("pythonw.exe")] + "python.exe"
+VENV_PYTHON = _exe
 from gui.widgets import (
     PageHeader, InputField, ActionButton, StatusBar, Tooltip, ContentPreview,
     ProgressIndicator, PlaceholderEntry,
@@ -826,7 +833,7 @@ class TrainingPage(ctk.CTkFrame):
                 step += 1; _update(step / steps, "Checking CUDA GPU…")
                 try:
                     r = subprocess.run(
-                        [sys.executable, "-c",
+                        [VENV_PYTHON, "-c",
                          "import torch, json; "
                          "d = {}; "
                          "d['avail'] = torch.cuda.is_available(); "
@@ -898,7 +905,7 @@ class TrainingPage(ctk.CTkFrame):
                         # xformers 0.0.28 -> torch 2.5, 0.0.35 -> torch 2.10, etc.
                         try:
                             r2 = subprocess.run(
-                                [sys.executable, "-c",
+                                [VENV_PYTHON, "-c",
                                  "import xformers; print('ok')"],
                                 capture_output=True, text=True, timeout=15,
                                 creationflags=subprocess.CREATE_NO_WINDOW,
@@ -946,7 +953,7 @@ class TrainingPage(ctk.CTkFrame):
                 step += 1; _update(step / steps, "Testing unsloth import…")
                 try:
                     r = subprocess.run(
-                        [sys.executable, "-c",
+                        [VENV_PYTHON, "-c",
                          "from unsloth import FastLanguageModel; "
                          "from trl import SFTTrainer; "
                          "print('OK')"],
@@ -1437,8 +1444,7 @@ class TrainingPage(ctk.CTkFrame):
 
         self.status.set_working("Launching training in new console…")
 
-        # Use the same venv Python that is running this app
-        venv_python = sys.executable
+        venv_python = VENV_PYTHON
 
         def _do():
             try:

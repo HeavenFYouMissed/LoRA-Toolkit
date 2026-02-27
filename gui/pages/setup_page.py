@@ -16,6 +16,12 @@ import customtkinter as ctk
 from gui.theme  import COLORS, FONT_FAMILY, FONT_SIZES
 from gui.widgets import PageHeader, ActionButton, StatusBar, Tooltip, ProgressIndicator
 
+# sys.executable may be pythonw.exe when launched as a GUI app.
+# Subprocess calls need python.exe so consoles and -c work properly.
+_exe = sys.executable
+if _exe.endswith("pythonw.exe"):
+    _exe = _exe[:-len("pythonw.exe")] + "python.exe"
+VENV_PYTHON = _exe
 
 # ---------------------------------------------------------------
 #  GPU Detection Helpers
@@ -141,21 +147,21 @@ TRAINING_PKGS = [
 
 def _pip_cmd(*args: str) -> list[str]:
     """Build a pip command list using the active Python interpreter."""
-    return [sys.executable, "-m", "pip", "install"] + list(args)
+    return [VENV_PYTHON, "-m", "pip", "install"] + list(args)
 
 TORCH_CUDA_CMD = (
-    f'"{sys.executable}" -m pip install torch torchvision torchaudio '
+    f'"{VENV_PYTHON}" -m pip install torch torchvision torchaudio '
     f'--index-url https://download.pytorch.org/whl/cu128'
 )
 
 UNSLOTH_CMD = (
-    f'"{sys.executable}" -m pip install '
+    f'"{VENV_PYTHON}" -m pip install '
     f'"unsloth @ git+https://github.com/unslothai/unsloth.git" '
     f'"unsloth_zoo @ git+https://github.com/unslothai/unsloth-zoo.git"'
 )
 
 XFORMERS_CMD = (
-    f'"{sys.executable}" -m pip install xformers torchao '
+    f'"{VENV_PYTHON}" -m pip install xformers torchao '
     f'--index-url https://download.pytorch.org/whl/cu128'
 )
 
@@ -827,7 +833,7 @@ class SetupPage(ctk.CTkFrame):
                     gpu_cap=None, arch_list=[], warnings=[])
         try:
             r = subprocess.run(
-                [sys.executable, "-c",
+                [VENV_PYTHON, "-c",
                  "import torch, json; "
                  "d = {}; "
                  "d['ver']     = torch.__version__; "
@@ -1002,7 +1008,7 @@ class SetupPage(ctk.CTkFrame):
             # Silently upgrade pip itself first so "[notice]" never appears
             self._run_pip(
                 "Upgrading pip",
-                [sys.executable, "-m", "pip", "install", "--upgrade", "pip"],
+                [VENV_PYTHON, "-m", "pip", "install", "--upgrade", "pip"],
                 timeout=60,
             )
             self.after(0, lambda: self.prog_step1.set_phase("Installing core packages\u2026"))
@@ -1106,7 +1112,7 @@ class SetupPage(ctk.CTkFrame):
                 "Verifying unsloth imports\u2026"))
             try:
                 r = subprocess.run(
-                    [sys.executable, "-c",
+                    [VENV_PYTHON, "-c",
                      "from unsloth import FastLanguageModel; "
                      "from trl import SFTTrainer; print('OK')"],
                     capture_output=True, text=True, timeout=60,
