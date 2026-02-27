@@ -1,12 +1,16 @@
 """
 OCR Page - Extract text from screenshots and images.
+Auto-downloads Tesseract OCR if not installed.
 """
 import threading
 import customtkinter as ctk
 from tkinter import filedialog
 from gui.theme import COLORS, FONT_FAMILY, FONT_SIZES
 from gui.widgets import PageHeader, ContentPreview, InputField, TagInput, ActionButton, StatusBar, Tooltip
-from core.ocr import ocr_from_clipboard, ocr_from_file
+from core.ocr import (
+    ocr_from_clipboard, ocr_from_file,
+    HAS_TESSERACT, _TESSERACT_FOUND, install_tesseract,
+)
 from core.database import add_entry
 
 
@@ -23,7 +27,7 @@ class OcrPage(ctk.CTkFrame):
         # Header
         PageHeader(
             container, icon="📸", title="Screenshot OCR",
-            subtitle="Extract text from screenshots and images (requires Tesseract OCR)"
+            subtitle="Extract text from screenshots and images (auto-installs Tesseract OCR)"
         ).pack(fill="x", pady=(0, 15))
 
         # Info box
@@ -34,8 +38,8 @@ class OcrPage(ctk.CTkFrame):
             text="💡 How to use:\n"
                  "  1. Take a screenshot (Win+Shift+S) or open an image file\n"
                  "  2. Click 'OCR from Clipboard' or 'OCR from File'\n"
-                 "  3. Preview and edit the extracted text\n"
-                 "  4. Save to your library",
+                 "  3. Tesseract OCR will auto-download on first use (~70 MB)\n"
+                 "  4. Preview and edit the extracted text, then save",
             font=(FONT_FAMILY, FONT_SIZES["body"]),
             text_color=COLORS["text_secondary"],
             justify="left",
@@ -98,6 +102,9 @@ class OcrPage(ctk.CTkFrame):
         self.status.set_working("Reading clipboard image...")
 
         def do_ocr():
+            # Auto-install Tesseract if needed
+            if not self._ensure_tesseract():
+                return
             result = ocr_from_clipboard()
             self.after(0, lambda: self._handle_result(result))
 
@@ -117,10 +124,38 @@ class OcrPage(ctk.CTkFrame):
         self.status.set_working("Extracting text from image...")
 
         def do_ocr():
+            # Auto-install Tesseract if needed
+            if not self._ensure_tesseract():
+                return
             result = ocr_from_file(file_path)
             self.after(0, lambda: self._handle_result(result))
 
         threading.Thread(target=do_ocr, daemon=True).start()
+
+    def _ensure_tesseract(self):
+        """Check for Tesseract and auto-install if missing. Returns True if ready."""
+        from core import ocr as _ocr_mod
+        if not _ocr_mod.HAS_TESSERACT:
+            self.after(0, lambda: self.status.set_error(
+                "pytesseract package not installed — go to Setup tab, run Step 2"
+            ))
+            return False
+
+        if _ocr_mod._TESSERACT_FOUND:
+            return True
+
+        # Auto-download and install
+        def _progress(msg):
+            self.after(0, lambda m=msg: self.status.set_working(m))
+
+        _progress("Tesseract not found — downloading automatically...")
+        ok, msg = install_tesseract(on_progress=_progress)
+        if ok:
+            self.after(0, lambda: self.status.set_working("Tesseract installed! Running OCR..."))
+            return True
+        else:
+            self.after(0, lambda m=msg: self.status.set_error(f"Auto-install failed: {m}"))
+            return False
 
     def _handle_result(self, result):
         if result["success"]:

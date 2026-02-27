@@ -19,6 +19,9 @@ build/
 data/
 *.db
 
+# Tesseract OCR (auto-downloaded ~50MB)
+tesseract/
+
 # Training outputs
 outputs/
 lora_adapter/
