@@ -66,8 +66,9 @@ class LibraryPage(ctk.CTkFrame):
             height=32,
         )
         self.search_entry.pack(fill="x", pady=(0, 5))
+        self._search_after_id = None
         self.search_entry.bind("<Return>", lambda e: self.refresh())
-        self.search_entry.bind("<KeyRelease>", lambda e: self.refresh())
+        self.search_entry.bind("<KeyRelease>", self._schedule_search)
         Tooltip(self.search_entry, "Type to search across all entries.\nSearches titles, content, and tags.\nResults filter in real-time as you type.")
 
         # Type filter
@@ -208,8 +209,15 @@ class LibraryPage(ctk.CTkFrame):
         self.status = StatusBar(detail_container)
         self.status.pack(fill="x")
 
+    def _schedule_search(self, event=None):
+        """Debounce: wait 300 ms after last keystroke before refreshing."""
+        if self._search_after_id:
+            self.after_cancel(self._search_after_id)
+        self._search_after_id = self.after(300, self.refresh)
+
     def refresh(self, event=None):
         """Reload the entry list from database."""
+        self._search_after_id = None
         search = self.search_entry.get().strip() if self.search_entry.get() else None
         source_type = self.type_filter.get()
 

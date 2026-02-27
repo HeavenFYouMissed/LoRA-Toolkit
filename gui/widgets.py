@@ -232,7 +232,8 @@ class ContentPreview(ctk.CTkFrame):
             wrap="word",
         )
         self.textbox.pack(fill="both", expand=True, pady=(5, 0))
-        self.textbox.bind("<KeyRelease>", self._update_word_count)
+        self._wc_after_id = None
+        self.textbox.bind("<KeyRelease>", self._schedule_word_count)
 
         # Focus glow
         self.textbox.bind("<FocusIn>", lambda e: self.textbox.configure(border_color=COLORS.get("border_focus", COLORS["accent"]), border_width=2))
@@ -250,7 +251,14 @@ class ContentPreview(ctk.CTkFrame):
         self.textbox.delete("1.0", "end")
         self._update_word_count()
 
+    def _schedule_word_count(self, event=None):
+        """Debounce: wait 250 ms after last keystroke before counting."""
+        if self._wc_after_id:
+            self.after_cancel(self._wc_after_id)
+        self._wc_after_id = self.after(250, self._update_word_count)
+
     def _update_word_count(self, event=None):
+        self._wc_after_id = None
         text = self.get_text()
         words = len(text.split()) if text else 0
         chars = len(text)

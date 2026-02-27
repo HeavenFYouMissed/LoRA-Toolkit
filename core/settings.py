@@ -35,6 +35,10 @@ DEFAULTS = {
     # OCR
     "tesseract_path": "",  # empty = auto-detect
 
+    # AI Cleaner (Ollama)
+    "ollama_url": "http://localhost:11434",
+    "ollama_model": "llama3.2:3b",
+
     # Appearance
     "accent_color": "#e94560",
     "window_opacity": 0.97,
