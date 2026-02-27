@@ -9,7 +9,7 @@ Basic users only need Step 1.  Steps 2-3 are for LoRA fine-tuning.
 """
 
 from __future__ import annotations
-import platform, subprocess, threading, re
+import os, platform, subprocess, threading, re
 import customtkinter as ctk
 
 from gui.theme  import COLORS, FONT_FAMILY, FONT_SIZES
@@ -290,7 +290,7 @@ class SetupPage(ctk.CTkFrame):
         self.btn_step1 = ActionButton(
             s1_row, text="\u2460  Install Core",
             command=self._install_step1,
-            style="primary", width=180, height=36,
+            style="primary", width=180,
         )
         self.btn_step1.pack(side="left", padx=(0, 10))
         Tooltip(self.btn_step1,
@@ -317,7 +317,7 @@ class SetupPage(ctk.CTkFrame):
         self.btn_step2 = ActionButton(
             s2_row, text="\u2461  Install PyTorch + CUDA",
             command=self._install_step2,
-            style="primary", width=230, height=36,
+            style="primary", width=230,
         )
         self.btn_step2.pack(side="left", padx=(0, 10))
         Tooltip(self.btn_step2,
@@ -344,7 +344,7 @@ class SetupPage(ctk.CTkFrame):
         self.btn_step3 = ActionButton(
             s3_row, text="\u2462  Install Training Stack",
             command=self._install_step3,
-            style="success", width=230, height=36,
+            style="success", width=230,
         )
         self.btn_step3.pack(side="left", padx=(0, 10))
         Tooltip(self.btn_step3,
@@ -366,7 +366,7 @@ class SetupPage(ctk.CTkFrame):
         ActionButton(
             chk_row, text="\U0001f50d  Check All Dependencies",
             command=self._check_deps,
-            style="secondary", width=220, height=34,
+            style="secondary", width=220,
         ).pack(side="left")
 
         # -- Install log ---------------------------------------
@@ -407,6 +407,41 @@ class SetupPage(ctk.CTkFrame):
             text_color=COLORS["text_secondary"],
             justify="left",
         ).pack(anchor="w")
+
+        # -- Toolkit Log Viewer ---------------------------------
+        tlog_card = self._card(c)
+        self._heading(tlog_card, "\U0001f4cb  Toolkit Log")
+        self._hint(tlog_card,
+            "Recent app log entries (errors, warnings, info).  "
+            "Useful for troubleshooting."
+        )
+
+        tlog_btn_row = ctk.CTkFrame(tlog_card, fg_color="transparent")
+        tlog_btn_row.pack(fill="x", pady=(0, 6))
+
+        ActionButton(
+            tlog_btn_row, text="\U0001f504  Refresh Log",
+            command=self._load_toolkit_log,
+            style="secondary", width=150,
+        ).pack(side="left", padx=(0, 8))
+
+        ActionButton(
+            tlog_btn_row, text="\U0001f4c2  Open Log File",
+            command=self._open_log_file,
+            style="secondary", width=160,
+        ).pack(side="left")
+
+        self.tlog_text = ctk.CTkTextbox(
+            tlog_card, height=220,
+            font=("Consolas", FONT_SIZES["small"]),
+            fg_color=COLORS["bg_input"],
+            text_color=COLORS["text_secondary"],
+            corner_radius=8,
+        )
+        self.tlog_text.pack(fill="x", pady=(0, 0))
+
+        # Auto-load log on page build
+        self.after(600, self._load_toolkit_log)
 
         # -- Status bar ----------------------------------------
         self.status = StatusBar(c)
@@ -800,3 +835,42 @@ class SetupPage(ctk.CTkFrame):
 
         # Re-check everything
         self.after(500, self._check_deps)
+
+    # ==========================================================
+    #  Toolkit Log Viewer
+    # ==========================================================
+
+    def _get_log_path(self):
+        from core.logger import LOG_PATH
+        return LOG_PATH
+
+    def _load_toolkit_log(self):
+        """Read the last ~200 lines of toolkit.log into the viewer."""
+        path = self._get_log_path()
+        try:
+            if not os.path.exists(path):
+                content = "(No log file yet -- it appears after the first app run.)"
+            else:
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                # Show last 200 lines
+                tail = lines[-200:] if len(lines) > 200 else lines
+                content = "".join(tail)
+                if len(lines) > 200:
+                    content = f"... ({len(lines) - 200} earlier lines hidden) ...\n\n" + content
+        except Exception as e:
+            content = f"Error reading log: {e}"
+
+        self.tlog_text.configure(state="normal")
+        self.tlog_text.delete("1.0", "end")
+        self.tlog_text.insert("1.0", content)
+        self.tlog_text.see("end")
+        self.tlog_text.configure(state="disabled")
+
+    def _open_log_file(self):
+        """Open toolkit.log in the system default text editor."""
+        path = self._get_log_path()
+        if os.path.exists(path):
+            os.startfile(path)
+        else:
+            self.status.set_error("No log file yet -- run the app first.")
