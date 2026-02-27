@@ -637,14 +637,32 @@ class SetupPage(ctk.CTkFrame):
         return ok, miss
 
     def _probe_torch(self):
-        """Check that torch is installed AND has CUDA."""
+        """Check torch + CUDA via subprocess so mid-session installs are seen.
+
+        Returns (has_cuda: bool, version: str|None, cuda_ver: str|None).
+        """
         try:
-            import torch
-            return torch.cuda.is_available()
+            r = subprocess.run(
+                [sys.executable, "-c",
+                 "import torch; print(torch.__version__); "
+                 "print(torch.version.cuda or ''); "
+                 "print(torch.cuda.is_available())"],
+                capture_output=True, text=True, timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            if r.returncode != 0:
+                return False, None, None
+            lines = r.stdout.strip().splitlines()
+            version  = lines[0] if len(lines) > 0 else None
+            cuda_ver = lines[1] if len(lines) > 1 and lines[1] else None
+            has_cuda = lines[2].strip() == "True" if len(lines) > 2 else False
+            return has_cuda, version, cuda_ver
         except Exception:
-            return False
+            return False, None, None
 
     def _show_dep_status(self, core_ok, core_miss, torch_ok, train_ok, train_miss):
+        torch_has_cuda, torch_ver, cuda_ver = torch_ok
+
         # Step 1
         if not core_miss:
             self.lbl_step1.configure(
@@ -660,25 +678,23 @@ class SetupPage(ctk.CTkFrame):
             self._step_states[1] = "missing"
 
         # Step 2
-        if torch_ok:
-            import torch
+        if torch_has_cuda:
             self.lbl_step2.configure(
-                text=f"\u2705  PyTorch {torch.__version__}  |  CUDA {torch.version.cuda}",
+                text=f"\u2705  PyTorch {torch_ver}  |  CUDA {cuda_ver}",
                 text_color=COLORS["accent_green"],
             )
             self._step_states[2] = "done"
+        elif torch_ver:
+            self.lbl_step2.configure(
+                text=f"\u26a0  PyTorch {torch_ver} but NO CUDA",
+                text_color=COLORS["accent_orange"],
+            )
+            self._step_states[2] = "missing"
         else:
-            try:
-                import torch
-                self.lbl_step2.configure(
-                    text=f"\u26a0  PyTorch {torch.__version__} but NO CUDA",
-                    text_color=COLORS["accent_orange"],
-                )
-            except ImportError:
-                self.lbl_step2.configure(
-                    text="\u274c  Not installed",
-                    text_color=COLORS["error"],
-                )
+            self.lbl_step2.configure(
+                text="\u274c  Not installed",
+                text_color=COLORS["error"],
+            )
             self._step_states[2] = "missing"
 
         # Step 3
