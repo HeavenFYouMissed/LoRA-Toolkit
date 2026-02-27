@@ -39,8 +39,10 @@ GROQ_MODELS = [
 GROK_API_URL = "https://api.x.ai/v1"
 GROK_DEFAULT_MODEL = "grok-3-mini"
 GROK_MODELS = [
+    "grok-4-0709",
+    "grok-4-fast-reasoning",
+    "grok-4-fast-non-reasoning",
     "grok-3",
-    "grok-3-fast",
     "grok-3-mini",
     "grok-3-mini-fast",
     "grok-2",
@@ -801,3 +803,47 @@ def grok_list_models(api_key: str = "") -> list[str]:
         return names if names else list(GROK_MODELS)
     except Exception:
         return list(GROK_MODELS)
+
+
+def grok_verify_key(api_key: str) -> dict:
+    """Verify an xAI API key. Returns {success: bool, models: list, error: str}."""
+    if not api_key:
+        return {"success": False, "models": [], "error": "No API key provided"}
+    try:
+        url = f"{GROK_API_URL}/models"
+        req = urllib.request.Request(
+            url, method="GET",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        names = sorted(m["id"] for m in data.get("data", []))
+        if names:
+            return {"success": True, "models": names, "error": ""}
+        return {"success": False, "models": [], "error": "API returned no models"}
+    except urllib.error.HTTPError as e:
+        return {"success": False, "models": [], "error": f"HTTP {e.code}: Invalid API key or unauthorized"}
+    except Exception as e:
+        return {"success": False, "models": [], "error": str(e)}
+
+
+def groq_verify_key(api_key: str) -> dict:
+    """Verify a Groq API key. Returns {success: bool, models: list, error: str}."""
+    if not api_key:
+        return {"success": False, "models": [], "error": "No API key provided"}
+    try:
+        url = f"{GROQ_API_URL}/models"
+        req = urllib.request.Request(
+            url, method="GET",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        names = sorted(m["id"] for m in data.get("data", []) if m.get("active", True))
+        if names:
+            return {"success": True, "models": names, "error": ""}
+        return {"success": False, "models": [], "error": "API returned no models"}
+    except urllib.error.HTTPError as e:
+        return {"success": False, "models": [], "error": f"HTTP {e.code}: Invalid API key or unauthorized"}
+    except Exception as e:
+        return {"success": False, "models": [], "error": str(e)}

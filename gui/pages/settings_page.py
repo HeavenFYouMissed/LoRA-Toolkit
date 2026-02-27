@@ -711,51 +711,54 @@ class SettingsPage(ctk.CTkFrame):
             self.status.set_error(f"Error reading file: {e}")
 
     def _verify_groq_key(self):
-        """Test the Groq API key by fetching the model list."""
+        """Test the Groq API key with a real API call."""
         import threading
         key = self.groq_key_entry.get().strip()
         if not key:
             self.status.set_error("No Groq API key entered")
             return
-        self.btn_groq_verify.configure(state="disabled", text="⏳...")
-        self.status.set_working("Testing Groq API key...")
+        self.btn_groq_verify.configure(state="disabled", text="⏳ Testing...")
+        self.status.set_working("Verifying Groq API key...")
 
         def _check():
-            from core.ai_cleaner import groq_list_models, GROQ_MODELS
-            models = groq_list_models(key)
+            from core.ai_cleaner import groq_verify_key
+            result = groq_verify_key(key)
             def _done():
-                self.btn_groq_verify.configure(state="normal", text="✅ Verify")
-                # If we got more models than the static fallback, key is working
-                if models and models != list(GROQ_MODELS):
-                    self.status.set_success(f"✅ Groq key valid — {len(models)} models available")
-                elif models:
-                    self.status.set_success(f"✅ Groq key loaded — using {len(models)} default models")
+                if result["success"]:
+                    count = len(result["models"])
+                    self.btn_groq_verify.configure(state="normal", text="✅ Verified")
+                    self.status.set_success(f"✅ Groq key verified — {count} models ready")
                 else:
-                    self.status.set_error("❌ Groq key failed — no models returned")
+                    self.btn_groq_verify.configure(state="normal", text="❌ Failed")
+                    self.status.set_error(f"❌ Groq key failed — {result['error']}")
+                # Reset button text after 3 seconds
+                self.after(3000, lambda: self.btn_groq_verify.configure(text="✅ Verify"))
             self.after(0, _done)
         threading.Thread(target=_check, daemon=True).start()
 
     def _verify_grok_key(self):
-        """Test the xAI Grok API key by fetching the model list."""
+        """Test the xAI Grok API key with a real API call."""
         import threading
         key = self.grok_key_entry.get().strip()
         if not key:
             self.status.set_error("No xAI Grok API key entered")
             return
-        self.btn_grok_verify.configure(state="disabled", text="⏳...")
-        self.status.set_working("Testing xAI Grok API key...")
+        self.btn_grok_verify.configure(state="disabled", text="⏳ Testing...")
+        self.status.set_working("Verifying xAI Grok API key...")
 
         def _check():
-            from core.ai_cleaner import grok_list_models, GROK_MODELS
-            models = grok_list_models(key)
+            from core.ai_cleaner import grok_verify_key
+            result = grok_verify_key(key)
             def _done():
-                self.btn_grok_verify.configure(state="normal", text="✅ Verify")
-                if models and models != list(GROK_MODELS):
-                    self.status.set_success(f"✅ xAI Grok key valid — {len(models)} models available")
-                elif models:
-                    self.status.set_success(f"✅ xAI Grok key loaded — using {len(models)} default models")
+                if result["success"]:
+                    count = len(result["models"])
+                    self.btn_grok_verify.configure(state="normal", text="✅ Verified")
+                    self.status.set_success(f"✅ xAI Grok key verified — {count} models ready")
                 else:
-                    self.status.set_error("❌ xAI Grok key failed — no models returned")
+                    self.btn_grok_verify.configure(state="normal", text="❌ Failed")
+                    self.status.set_error(f"❌ xAI Grok key failed — {result['error']}")
+                # Reset button text after 3 seconds
+                self.after(3000, lambda: self.btn_grok_verify.configure(text="✅ Verify"))
             self.after(0, _done)
         threading.Thread(target=_check, daemon=True).start()
 
