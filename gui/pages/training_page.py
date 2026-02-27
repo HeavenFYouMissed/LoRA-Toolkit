@@ -788,63 +788,193 @@ class TrainingPage(ctk.CTkFrame):
                                     "No models — run 'ollama pull <model>'"))
                 _update(1.0, "Done")
             else:
-                # ── Full LoRA deps — fast subprocess check ──
+                # ── Full LoRA deps — thorough validation ──
                 import importlib.metadata
                 importlib.invalidate_caches()
+                from packaging.version import Version
 
-                steps = 9
+                steps = 14
                 step = 0
 
-                # Python
+                # ① Python version
                 step += 1; _update(step / steps, "Checking Python…")
                 import platform
-                results.append(("Python", True, f"v{platform.python_version()}"))
+                pyver = platform.python_version()
+                py_ok = Version(pyver) >= Version("3.10")
+                results.append(("Python", py_ok,
+                                f"v{pyver}" if py_ok
+                                else f"v{pyver} — need ≥3.10 for unsloth"))
 
-                # CUDA GPU (subprocess to avoid stale cached torch)
+                # ② PyTorch installed + version ≥2.6
+                step += 1; _update(step / steps, "Checking PyTorch…")
+                torch_ver = None
+                try:
+                    dist = importlib.metadata.distribution("torch")
+                    torch_ver = dist.version.split("+")[0]   # "2.10.0"
+                    t_ok = Version(torch_ver) >= Version("2.6.0")
+                    results.append(("PyTorch", t_ok,
+                                    f"v{dist.version}" if t_ok
+                                    else f"v{dist.version} — need ≥2.6  →  "
+                                         f"pip install torch --index-url "
+                                         f"https://download.pytorch.org/whl/cu128"))
+                except importlib.metadata.PackageNotFoundError:
+                    results.append(("PyTorch", False,
+                                    "Not installed  →  pip install torch "
+                                    "--index-url https://download.pytorch.org/whl/cu128"))
+
+                # ③ CUDA GPU + compute-capability vs torch build
                 step += 1; _update(step / steps, "Checking CUDA GPU…")
                 try:
-                    import sys as _sys
                     r = subprocess.run(
-                        [_sys.executable, "-c",
-                         "import torch; "
-                         "print(torch.cuda.is_available()); "
-                         "print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else ''); "
-                         "print(torch.cuda.get_device_properties(0).total_mem if torch.cuda.is_available() else 0)"],
+                        [sys.executable, "-c",
+                         "import torch, json; "
+                         "d = {}; "
+                         "d['avail'] = torch.cuda.is_available(); "
+                         "d['name']  = torch.cuda.get_device_name(0) if d['avail'] else ''; "
+                         "d['mem']   = torch.cuda.get_device_properties(0).total_mem if d['avail'] else 0; "
+                         "d['cap']   = list(torch.cuda.get_device_capability(0)) if d['avail'] else [0,0]; "
+                         "d['archs'] = torch.cuda.get_arch_list() if hasattr(torch.cuda, 'get_arch_list') else []; "
+                         "d['cu']    = torch.version.cuda or ''; "
+                         "print(json.dumps(d))"],
                         capture_output=True, text=True, timeout=30,
                         creationflags=subprocess.CREATE_NO_WINDOW,
                     )
-                    lines = r.stdout.strip().splitlines()
-                    has_cuda = lines[0].strip() == "True" if lines else False
-                    if has_cuda:
-                        gn = lines[1] if len(lines) > 1 else "GPU"
-                        vr = int(lines[2]) / 1e9 if len(lines) > 2 else 0
-                        results.append(("CUDA GPU", True, f"{gn} ({vr:.1f} GB)"))
+                    import json as _j
+                    ginfo = _j.loads(r.stdout.strip())
+                    if ginfo["avail"]:
+                        gn = ginfo["name"]
+                        vr = ginfo["mem"] / 1e9
+                        cap = f"sm_{ginfo['cap'][0]}{ginfo['cap'][1]}"
+                        archs = ginfo["archs"]
+                        cu = ginfo["cu"]
+                        # Check if GPU compute capability is in torch's supported list
+                        cap_supported = any(cap <= a for a in archs) if archs else True
+                        if cap_supported:
+                            results.append(("CUDA GPU", True,
+                                            f"{gn} ({vr:.1f} GB)  CUDA {cu}  [{cap}]"))
+                        else:
+                            results.append(("CUDA GPU", False,
+                                            f"{gn} [{cap}] NOT supported by this torch "
+                                            f"(max {archs[-1] if archs else '?'})  →  "
+                                            f"pip install torch --index-url "
+                                            f"https://download.pytorch.org/whl/cu128"))
                     else:
                         results.append(("CUDA GPU", False,
                                         "No CUDA GPU — LoRA training requires NVIDIA GPU"))
-                except Exception:
-                    results.append(("CUDA GPU", False, "Could not detect — is PyTorch installed?"))
+                except Exception as exc:
+                    results.append(("CUDA GPU", False,
+                                    f"Detection failed: {exc}  →  is PyTorch installed?"))
 
-                # Package checks via metadata (fast, no import)
-                for pkg, label in [("unsloth", "Unsloth"),
-                                   ("peft", "PEFT"),
-                                   ("transformers", "Transformers"),
-                                   ("trl", "TRL"),
-                                   ("datasets", "Datasets")]:
+                # ④ torchao (needed by unsloth, version-sensitive)
+                step += 1; _update(step / steps, "Checking torchao…")
+                try:
+                    dist = importlib.metadata.distribution("torchao")
+                    tao_ver = dist.version
+                    tao_ok = Version(tao_ver) >= Version("0.13.0")
+                    results.append(("torchao", tao_ok,
+                                    f"v{tao_ver}" if tao_ok
+                                    else f"v{tao_ver} — need ≥0.13  →  pip install --upgrade torchao"))
+                except importlib.metadata.PackageNotFoundError:
+                    results.append(("torchao", False,
+                                    "Not installed  →  pip install torchao"))
+
+                # ⑤ bitsandbytes (4-bit quantization)
+                step += 1; _update(step / steps, "Checking bitsandbytes…")
+                try:
+                    dist = importlib.metadata.distribution("bitsandbytes")
+                    results.append(("bitsandbytes", True, f"v{dist.version}"))
+                except importlib.metadata.PackageNotFoundError:
+                    results.append(("bitsandbytes", False,
+                                    "Not installed  →  pip install bitsandbytes"))
+
+                # ⑥ xformers (memory-efficient attention)
+                step += 1; _update(step / steps, "Checking xformers…")
+                try:
+                    dist = importlib.metadata.distribution("xformers")
+                    # xformers must match torch major version
+                    xf_ok = True
+                    hint = f"v{dist.version}"
+                    if torch_ver:
+                        # xformers 0.0.28 -> torch 2.5, 0.0.35 -> torch 2.10, etc.
+                        try:
+                            r2 = subprocess.run(
+                                [sys.executable, "-c",
+                                 "import xformers; print('ok')"],
+                                capture_output=True, text=True, timeout=15,
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                            )
+                            if r2.returncode != 0:
+                                xf_ok = False
+                                hint = (f"v{dist.version} — incompatible with "
+                                        f"torch {torch_ver}  →  pip install "
+                                        f"--upgrade xformers --index-url "
+                                        f"https://download.pytorch.org/whl/cu128")
+                        except Exception:
+                            pass
+                    results.append(("xformers", xf_ok, hint))
+                except importlib.metadata.PackageNotFoundError:
+                    results.append(("xformers", False,
+                                    "Not installed  →  pip install xformers "
+                                    "--index-url https://download.pytorch.org/whl/cu128"))
+
+                # ⑦–⑩ Core training packages (version + existence)
+                core_pkgs = [
+                    ("unsloth",      "Unsloth",      "0.0.1",
+                     "pip install \"unsloth @ git+https://github.com/unslothai/unsloth.git\""),
+                    ("peft",         "PEFT",         "0.18.0",
+                     "pip install --upgrade peft"),
+                    ("transformers", "Transformers", "4.51.0",
+                     "pip install --upgrade transformers"),
+                    ("trl",          "TRL",          "0.18.2",
+                     "pip install --upgrade trl"),
+                    ("datasets",     "Datasets",     "3.4.0",
+                     "pip install --upgrade datasets"),
+                ]
+                for pkg, label, min_ver, fix_cmd in core_pkgs:
                     step += 1; _update(step / steps, f"Checking {label}…")
                     try:
                         dist = importlib.metadata.distribution(pkg)
-                        results.append((label, True, f"v{dist.version}"))
+                        ver = dist.version
+                        v_ok = Version(ver) >= Version(min_ver)
+                        results.append((label, v_ok,
+                                        f"v{ver}" if v_ok
+                                        else f"v{ver} — need ≥{min_ver}  →  {fix_cmd}"))
                     except importlib.metadata.PackageNotFoundError:
-                        results.append((label, False, f"pip install {pkg}"))
+                        results.append((label, False, f"Not installed  →  {fix_cmd}"))
 
-                # Ollama
+                # ⑪ Unsloth import smoke-test (catches version mismatches)
+                step += 1; _update(step / steps, "Testing unsloth import…")
+                try:
+                    r = subprocess.run(
+                        [sys.executable, "-c",
+                         "from unsloth import FastLanguageModel; "
+                         "from trl import SFTTrainer; "
+                         "print('OK')"],
+                        capture_output=True, text=True, timeout=60,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
+                    if r.returncode == 0 and "OK" in r.stdout:
+                        results.append(("Import Test", True,
+                                        "unsloth + SFTTrainer load OK"))
+                    else:
+                        # Extract the actual error for the user
+                        err = (r.stderr or r.stdout).strip().splitlines()
+                        err_msg = err[-1] if err else "unknown error"
+                        if len(err_msg) > 120:
+                            err_msg = err_msg[:120] + "…"
+                        results.append(("Import Test", False,
+                                        f"Crash: {err_msg}  →  reinstall unsloth "
+                                        f"from git (see docs)"))
+                except Exception as exc:
+                    results.append(("Import Test", False, f"Test failed: {exc}"))
+
+                # ⑫ Ollama
                 step += 1; _update(step / steps, "Checking Ollama…")
                 ok = shutil.which("ollama") is not None
                 results.append(("Ollama CLI", ok,
                                 "Available" if ok else "Optional — needed for final import"))
 
-                # Model
+                # ⑬ Training model resolved
                 step += 1; _update(step / steps, "Checking model…")
                 mid = self._get_training_model_id()
                 if mid:
@@ -861,22 +991,35 @@ class TrainingPage(ctk.CTkFrame):
         self.btn_check.configure(state="normal")
         lines = ["# Dependency Check\n"]
         all_ok = True
+        fix_cmds = []
         for name, ok, msg in results:
             lines.append(f"{'✅' if ok else '❌'}  {name}: {msg}")
             if not ok:
                 all_ok = False
+                # Extract pip command from "→  pip install ..." hints
+                if "→" in msg:
+                    cmd = msg.split("→")[-1].strip()
+                    if cmd.startswith("pip "):
+                        fix_cmds.append(cmd)
         if all_ok:
             lines.append("\n🎉 All good — you're ready to go!")
             self.progress.stop("All dependencies ready ✓")
         else:
-            lines.append("\n⚠ Fix the items above before continuing.")
+            lines.append("\n⚠ Fix the items marked ❌ above before continuing.")
+            if fix_cmds:
+                lines.append("\n# Quick-fix commands (run in the venv):\n")
+                for cmd in fix_cmds:
+                    lines.append(f"  {cmd}")
             self.progress.set_progress(1.0, "⚠ Some dependencies missing")
             self.progress.bar.configure(progress_color=COLORS["error"])
         self.output.set_text("\n".join(lines))
         if all_ok:
             self.status.set_success("All dependencies ready")
         else:
-            self.status.set_error("Some dependencies missing")
+            self.status.set_error(
+                f"{sum(1 for _, ok, _ in results if not ok)} "
+                f"issue(s) found — see output"
+            )
 
     # ══════════════════════════════════════════════════════
     #  Script Generation

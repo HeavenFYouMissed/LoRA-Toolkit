@@ -136,6 +136,7 @@ TRAINING_PKGS = [
     "peft", "transformers", "trl",
     "datasets", "accelerate", "bitsandbytes",
     "sentencepiece", "protobuf",
+    "xformers", "torchao",
 ]
 
 def _pip_cmd(*args: str) -> list[str]:
@@ -144,12 +145,18 @@ def _pip_cmd(*args: str) -> list[str]:
 
 TORCH_CUDA_CMD = (
     f'"{sys.executable}" -m pip install torch torchvision torchaudio '
-    f'--index-url https://download.pytorch.org/whl/cu124'
+    f'--index-url https://download.pytorch.org/whl/cu128'
 )
 
 UNSLOTH_CMD = (
-    f'"{sys.executable}" -m pip install "unsloth[cu124-torch250] @ '
-    f'git+https://github.com/unslothai/unsloth.git"'
+    f'"{sys.executable}" -m pip install '
+    f'"unsloth @ git+https://github.com/unslothai/unsloth.git" '
+    f'"unsloth_zoo @ git+https://github.com/unslothai/unsloth-zoo.git"'
+)
+
+XFORMERS_CMD = (
+    f'"{sys.executable}" -m pip install xformers torchao '
+    f'--index-url https://download.pytorch.org/whl/cu128'
 )
 
 
@@ -475,10 +482,10 @@ class SetupPage(ctk.CTkFrame):
 
         # -- Step 2: PyTorch + CUDA ----------------------------
         s2 = self._card(c)
-        self._step_header(s2, "2", "PyTorch + CUDA 12.4",
+        self._step_header(s2, "2", "PyTorch + CUDA 12.8",
                           "GPU compute layer -- lets Python talk to your NVIDIA GPU.  "
                           "Skip this if you only need basic features.")
-        self._hint(s2, "\u26a0  ~2.5 GB download.  Requires NVIDIA GPU.")
+        self._hint(s2, "\u26a0  ~2.8 GB download.  Requires NVIDIA GPU.")
 
         s2_row = ctk.CTkFrame(s2, fg_color="transparent")
         s2_row.pack(fill="x", pady=(4, 0))
@@ -813,29 +820,64 @@ class SetupPage(ctk.CTkFrame):
     def _probe_torch(self):
         """Check torch + CUDA via subprocess so mid-session installs are seen.
 
-        Returns (has_cuda: bool, version: str|None, cuda_ver: str|None).
+        Returns dict with keys:
+          has_cuda, version, cuda_ver, gpu_cap, arch_list, warnings
         """
+        info = dict(has_cuda=False, version=None, cuda_ver=None,
+                    gpu_cap=None, arch_list=[], warnings=[])
         try:
             r = subprocess.run(
                 [sys.executable, "-c",
-                 "import torch; print(torch.__version__); "
-                 "print(torch.version.cuda or ''); "
-                 "print(torch.cuda.is_available())"],
+                 "import torch, json; "
+                 "d = {}; "
+                 "d['ver']     = torch.__version__; "
+                 "d['cuda']    = torch.version.cuda or ''; "
+                 "d['avail']   = torch.cuda.is_available(); "
+                 "d['cap']     = list(torch.cuda.get_device_capability(0)) if d['avail'] else []; "
+                 "d['archs']   = torch.cuda.get_arch_list() if hasattr(torch.cuda,'get_arch_list') else []; "
+                 "print(json.dumps(d))"],
                 capture_output=True, text=True, timeout=30,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             if r.returncode != 0:
-                return False, None, None
-            lines = r.stdout.strip().splitlines()
-            version  = lines[0] if len(lines) > 0 else None
-            cuda_ver = lines[1] if len(lines) > 1 and lines[1] else None
-            has_cuda = lines[2].strip() == "True" if len(lines) > 2 else False
-            return has_cuda, version, cuda_ver
-        except Exception:
-            return False, None, None
+                return info
+            import json as _j
+            d = _j.loads(r.stdout.strip())
+            info["version"]   = d.get("ver")
+            info["cuda_ver"]  = d.get("cuda") or None
+            info["has_cuda"]  = d.get("avail", False)
+            info["gpu_cap"]   = d.get("cap") or None
+            info["arch_list"] = d.get("archs", [])
 
-    def _show_dep_status(self, core_ok, core_miss, torch_ok, train_ok, train_miss):
-        torch_has_cuda, torch_ver, cuda_ver = torch_ok
+            # Version checks
+            from packaging.version import Version
+            ver_clean = (info["version"] or "0").split("+")[0]
+            if Version(ver_clean) < Version("2.6.0"):
+                info["warnings"].append(
+                    f"PyTorch {info['version']} too old (need ≥2.6 for torchao) "
+                    f"→ reinstall via Step 2"
+                )
+
+            # GPU arch compatibility
+            if info["gpu_cap"] and info["arch_list"]:
+                cap_str = f"sm_{info['gpu_cap'][0]}{info['gpu_cap'][1]}"
+                max_arch = info["arch_list"][-1] if info["arch_list"] else "?"
+                if not any(cap_str <= a for a in info["arch_list"]):
+                    info["warnings"].append(
+                        f"GPU compute {cap_str} not in torch's supported "
+                        f"architectures (max {max_arch}) → reinstall via Step 2"
+                    )
+                    info["has_cuda"] = False  # treat as broken
+
+        except Exception:
+            pass
+        return info
+
+    def _show_dep_status(self, core_ok, core_miss, torch_info, train_ok, train_miss):
+        torch_has_cuda = torch_info["has_cuda"]
+        torch_ver      = torch_info["version"]
+        cuda_ver       = torch_info["cuda_ver"]
+        torch_warns    = torch_info.get("warnings", [])
 
         # Step 1
         if not core_miss:
@@ -852,12 +894,21 @@ class SetupPage(ctk.CTkFrame):
             self._step_states[1] = "missing"
 
         # Step 2
-        if torch_has_cuda:
+        if torch_has_cuda and not torch_warns:
+            cap = torch_info.get("gpu_cap")
+            cap_str = f"  [sm_{cap[0]}{cap[1]}]" if cap else ""
             self.lbl_step2.configure(
-                text=f"\u2705  PyTorch {torch_ver}  |  CUDA {cuda_ver}",
+                text=f"\u2705  PyTorch {torch_ver}  |  CUDA {cuda_ver}{cap_str}",
                 text_color=COLORS["accent_green"],
             )
             self._step_states[2] = "done"
+        elif torch_ver and torch_warns:
+            warn_text = "; ".join(torch_warns)
+            self.lbl_step2.configure(
+                text=f"\u26a0  PyTorch {torch_ver} — {warn_text}",
+                text_color=COLORS["accent_orange"],
+            )
+            self._step_states[2] = "missing"
         elif torch_ver:
             self.lbl_step2.configure(
                 text=f"\u26a0  PyTorch {torch_ver} but NO CUDA",
@@ -981,12 +1032,12 @@ class SetupPage(ctk.CTkFrame):
             return
 
         self.btn_step2.configure(state="disabled", text="\u23f3  Installing...")
-        self.status.set_working("Step 2 -- Installing PyTorch + CUDA 12.4  (large download)...")
-        self.prog_step2.start_indeterminate("Downloading PyTorch + CUDA (~2.5 GB)\u2026")
+        self.status.set_working("Step 2 -- Installing PyTorch + CUDA 12.8  (large download)...")
+        self.prog_step2.start_indeterminate("Downloading PyTorch + CUDA (~2.8 GB)\u2026")
 
         def _do():
             ok = self._run_pip(
-                "Step 2: PyTorch + CUDA 12.4",
+                "Step 2: PyTorch + CUDA 12.8",
                 TORCH_CUDA_CMD, shell=True, timeout=900,
             )
             self.after(0, lambda: self._step_done(2, ok))
@@ -1011,27 +1062,78 @@ class SetupPage(ctk.CTkFrame):
         self.prog_step3.start_indeterminate("Installing Unsloth from GitHub\u2026")
 
         def _do():
-            # 3a: Unsloth from git
+            # 3a: Unsloth + unsloth_zoo from git
             self.after(0, lambda: self.status.set_working(
                 "Step 3a -- Installing Unsloth from GitHub..."
             ))
             ok_us = self._run_pip(
-                "Step 3a: Unsloth",
+                "Step 3a: Unsloth + unsloth_zoo",
                 UNSLOTH_CMD, shell=True, timeout=600,
             )
 
-            # 3b: remaining packages
+            # 3b: xformers + torchao (must match torch version)
             self.after(0, lambda: self.status.set_working(
-                "Step 3b -- Installing PEFT, TRL, Transformers..."
+                "Step 3b -- Installing xformers + torchao..."
             ))
-            self.after(0, lambda: self.prog_step3.set_phase("Installing PEFT, TRL, Transformers\u2026"))
+            self.after(0, lambda: self.prog_step3.set_phase(
+                "Installing xformers + torchao\u2026"))
+            ok_xf = self._run_pip(
+                "Step 3b: xformers + torchao",
+                XFORMERS_CMD, shell=True, timeout=300,
+            )
+
+            # 3c: remaining packages
+            self.after(0, lambda: self.status.set_working(
+                "Step 3c -- Installing PEFT, TRL, Transformers..."
+            ))
+            self.after(0, lambda: self.prog_step3.set_phase(
+                "Installing PEFT, TRL, Transformers\u2026"))
+            # Filter out xformers/torchao since we just installed them
+            # from the pytorch index; pip install from pypi would downgrade
+            rest_pkgs = [p for p in TRAINING_PKGS
+                         if p not in ("xformers", "torchao")]
             ok_rest = self._run_pip(
-                "Step 3b: PEFT + TRL + Transformers + more",
-                _pip_cmd(*TRAINING_PKGS),
+                "Step 3c: PEFT + TRL + Transformers + more",
+                _pip_cmd(*rest_pkgs),
                 timeout=300,
             )
 
-            ok = ok_us and ok_rest
+            # 3d: Smoke-test unsloth import
+            self.after(0, lambda: self.status.set_working(
+                "Step 3d -- Verifying unsloth imports..."
+            ))
+            self.after(0, lambda: self.prog_step3.set_phase(
+                "Verifying unsloth imports\u2026"))
+            try:
+                r = subprocess.run(
+                    [sys.executable, "-c",
+                     "from unsloth import FastLanguageModel; "
+                     "from trl import SFTTrainer; print('OK')"],
+                    capture_output=True, text=True, timeout=60,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                if r.returncode == 0 and "OK" in r.stdout:
+                    self.after(0, lambda: self._log(
+                        "\n\u2705  Import test passed: unsloth + SFTTrainer OK\n"
+                    ))
+                    ok_import = True
+                else:
+                    err = (r.stderr or r.stdout).strip().splitlines()
+                    err_msg = err[-1] if err else "unknown"
+                    self.after(0, lambda: self._log(
+                        f"\n\u274c  Import test FAILED: {err_msg}\n"
+                        f"    This usually means version mismatches.\n"
+                        f"    Try: pip install --force-reinstall \"unsloth @ "
+                        f"git+https://github.com/unslothai/unsloth.git\"\n"
+                    ))
+                    ok_import = False
+            except Exception as exc:
+                self.after(0, lambda: self._log(
+                    f"\n\u274c  Import test error: {exc}\n"
+                ))
+                ok_import = False
+
+            ok = ok_us and ok_xf and ok_rest and ok_import
             self.after(0, lambda: self._step_done(3, ok))
 
         threading.Thread(target=_do, daemon=True).start()
