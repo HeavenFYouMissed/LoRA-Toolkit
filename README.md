@@ -1,78 +1,104 @@
-# LoRA Data Toolkit
+# LoRA-Toolkit
 
-A **dead-simple Windows desktop app** for collecting training data from multiple sources and fine-tuning local LLMs with LoRA — all from one interface.
+**All-in-one local GUI for building high-quality LoRA models** — scrape data, organize it, clean/tag/preview, train with Unsloth (GPU or CPU fallback), merge models, and export ready-to-use LoRAs or Ollama Modelfiles.
 
-Built with Python + CustomTkinter. Dark OLED theme. No cloud, no subscriptions — everything runs locally.
+No cloud, no complicated setup, no stitching 5 tools together.
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
+![GPU](https://img.shields.io/badge/GPU-Optional-orange?logo=nvidia&logoColor=white)
+
+![Demo Screenshot](screenshots/demo-main.png)
+*(Add a 10-15 sec GIF here showing scrape -> preview -> train -> merge)*
 
 ---
 
-## What It Does
+## Why This Exists
 
-```
-Collect Data  →  Organize  →  Export  →  Train LoRA  →  Import to Ollama
-```
+Most LoRA tools are either:
+- **Training-only** (Kohya_ss, OneTrainer) — no built-in data collection
+- **Scraping-only** — no training or merging
+- **Cloud/paywalled** — slow, expensive, censored
 
-### 📥 Data Collection (7 sources)
+This is a **single local app** that does the full workflow: collect dirty web/YouTube/forum data -> clean/score/organize -> export formats -> train LoRA (fast Unsloth or CPU context injection) -> merge models -> deploy to Ollama.
+
+Built for people who want quick, private, offline custom models (characters, art styles, anticheat research, game mods, etc.).
+
+---
+
+## Features
+
+### 7 Data Sources in One GUI
+
 | Source | Description |
 |--------|------------|
-| 🌐 **Web Scraper** | Extract clean text from any URL (trafilatura + BS4 fallback) |
-| ⚡ **Bulk Scraper** | Paste 100+ URLs, scrape them all at once |
-| 🕷 **Site Crawler** | BFS depth crawler — crawl entire sites with rate limiting |
-| 📺 **YouTube** | Pull transcripts + metadata from YouTube videos |
-| 📋 **Paste Text** | Manually paste text, notes, documentation |
-| 📸 **Screenshot OCR** | Extract text from images/screenshots (Tesseract) |
-| 📁 **Import Files** | Drag-and-drop PDF, TXT, MD, HTML, JSON, CSV, code files |
+| Web Scraper | Single page + trafilatura extraction |
+| Bulk URL Scraper | Paste 100+ URLs, scrape them all at once |
+| Site Crawler | BFS depth-controlled, rate-limited |
+| YouTube Transcripts | Pull transcripts + metadata from any video |
+| Paste Text | Manually paste text, notes, documentation |
+| Screenshot OCR | Extract text from images (Tesseract) |
+| File Import | Drag-and-drop PDF, TXT, MD, HTML, JSON, CSV, code |
 
-### 📚 Data Management
-- **Library** — Browse, search, edit, score, and delete entries
-- **Quality Scoring** — Auto-score entries 0-100 for LoRA training quality
-- **Duplicate Detection** — Finds similar titles before adding
-- **Export** — 5 LoRA-ready formats: Alpaca, ShareGPT, Completion, ChatML, Raw JSON
+### Smart Data Management
+- SQLite database + quality auto-scoring (0-100)
+- Duplicate detection & removal
+- Edit, tag, category, search, delete
+- Real-time content preview + word/char count
 
-### 🧬 Training
-- **LoRA Fine-Tuning** — Real training with Unsloth on your NVIDIA GPU
-- **Auto Model Resolution** — Pick your Ollama model → auto-detects the HuggingFace source weights
-- **Abliterated Model Support** — Prefers abliterated HF repos when source model is abliterated (huihui-ai, etc.)
-- **Context Injection** — Quick hack: paste data into system prompt (honest about what it is)
-- **VRAM Guide** — Shows what models fit your GPU
+### Multiple Export Formats (ready for training)
+Alpaca - ShareGPT - Completion - ChatML - Raw JSONL
 
-### 🔀 Model Merging
-- **5 merge methods** — SLERP, Linear, TIES, DARE-TIES, Passthrough
-- **mergekit** wrapper with YAML config generation
-- **GGUF conversion** + Ollama Modelfile generation
+### LoRA Training
+- **Unsloth** (fast QLoRA on NVIDIA GPU)
+- **CPU fallback** (context injection via long-context models)
+- Auto-resolves Ollama names -> Hugging Face repos (prefers uncensored/abliterated variants)
+- VRAM-aware model recommendations
 
-### 🖥️ System Setup
-- **GPU Auto-Detection** — Finds your NVIDIA GPU, shows VRAM, driver info
-- **One-Click Dependency Install** — Installs PyTorch+CUDA, Unsloth, and all training deps
-- **Smart Messaging** — If no GPU, explains that only context injection is available
+### Model Merging ("Forge")
+- Mergekit integration (SLERP, Linear, TIES, DARE-TIES, Passthrough)
+- Auto YAML config
+- Converts to GGUF + Ollama Modelfile
+
+### Beautiful Dark GUI
+- CustomTkinter + Mica titlebar (Windows 11)
+- Sidebar navigation, reusable widgets, status bar
+- System tray + hotkeys
+
+### Step-by-Step Setup Page
+- GPU auto-detection (nvidia-smi + WMI fallback)
+- **3 numbered install buttons** — basic users only need Step 1
+  - **Step 1:** Core app deps (scraping, OCR, GUI)
+  - **Step 2:** PyTorch + CUDA 12.4 (GPU compute)
+  - **Step 3:** Training stack (Unsloth, PEFT, TRL)
+- Smart guards — Step 3 blocks until Step 2 is done, Step 2 warns without NVIDIA GPU
+
+### Offline & Private
+Everything runs locally. No telemetry, no cloud, no accounts.
 
 ---
 
-## Screenshots
+## Quick Start (Windows)
 
-*Dark OLED theme with Windows 11 Mica titlebar*
-
----
-
-## Quick Start
-
-### Prerequisites
-- **Python 3.11+** (3.12 recommended)
-- **Windows 10/11**
-- **Ollama** installed ([ollama.com](https://ollama.com)) for running local models
-
-### Option 1: Setup Script
-```bat
+### 1. Clone & run setup
+```bash
 git clone https://github.com/HeavenFYouMissed/LoRA-Toolkit.git
 cd LoRA-Toolkit
 setup.bat
 ```
 
-### Option 2: Manual
+### 2. Launch
+```bash
+python main.py
+```
+
+### 3. Use
+```
+Scrape/collect data -> Library -> Export -> Train -> Merge -> Done
+```
+
+### Manual install (if you prefer)
 ```bash
 git clone https://github.com/HeavenFYouMissed/LoRA-Toolkit.git
 cd LoRA-Toolkit
@@ -83,10 +109,12 @@ python main.py
 ```
 
 ### For LoRA Training (optional)
-If you have an **NVIDIA GPU**, go to **Setup / GPU** page in the app and click **"Install Training"** to auto-install:
-- PyTorch with CUDA 12.4
-- Unsloth (fast LoRA)
-- Transformers, PEFT, TRL, Datasets, etc.
+If you have an **NVIDIA GPU**, open the app and go to **Setup / GPU** page.
+Click the 3 buttons in order:
+
+1. **Install Core** — app basics
+2. **Install PyTorch + CUDA** — GPU compute (~2.5 GB download)
+3. **Install Training Stack** — Unsloth, PEFT, TRL (~2 GB download)
 
 Or install manually:
 ```bash
@@ -97,10 +125,59 @@ pip install peft transformers trl datasets accelerate bitsandbytes sentencepiece
 
 ---
 
+## Screenshots
+
+*(Add 4-6 images here — main window, scraper page, library, training config, merge result, setup page)*
+
+---
+
+## Training Workflow
+
+1. **Collect data** using any of the 7 sources
+2. **Review** in the Data Library — edit, score, remove low-quality entries
+3. **Export** as Alpaca JSONL format
+4. Go to **Train Model** page
+5. **Select your Ollama model** (e.g. `huihui_ai/qwen3-abliterated:14b`)
+6. App auto-resolves to the correct HuggingFace repo (prefers abliterated variants!)
+7. **Configure** LoRA params (rank, alpha, epochs, etc.)
+8. **Generate + Launch** — training runs in a new console
+9. After training -> **import to Ollama** and run your fine-tuned model
+
+### Supported Model Families
+Auto-mapping works for: **Qwen3, Qwen2.5, Llama 3/3.1/3.2, Gemma 2/3, Mistral, Mixtral, DeepSeek, Phi-3/4, Dolphin** — including abliterated/uncensored variants.
+
+---
+
+## VRAM Requirements (4-bit QLoRA)
+
+| VRAM | Model Size | Examples |
+|------|-----------|----------|
+| 4 GB | 1B-3B | Phi-3 Mini, Qwen2.5-3B |
+| 6 GB | 3B-4B | Llama 3.2-3B, Qwen3-4B |
+| 8 GB | 7B-8B | Mistral-7B, Llama 3.1-8B |
+| 12 GB | 9B-14B | Gemma-3-12B, Qwen3-14B |
+| 16 GB | 14B-27B | Qwen3-14B, Gemma-3-27B |
+| 24 GB | 30B-32B | Qwen2.5-32B, Qwen3-30B-A3B |
+| 48 GB | 70B | Llama 3.1-70B (tight) |
+
+---
+
+## Requirements
+
+- **Python 3.10+** (3.12 recommended)
+- **Windows** (primary), Linux/Mac supported
+- **GPU** (NVIDIA 6GB+ VRAM) for fast training — CPU works fine for everything else
+- **~10-20 GB** disk for models/datasets
+- **Ollama** installed ([ollama.com](https://ollama.com)) for running local models
+
+See `requirements.txt` for full Python package list.
+
+---
+
 ## Project Structure
 
 ```
-lora-data-toolkit/
+LoRA-Toolkit/
 ├── main.py                 # Entry point
 ├── config.py               # App configuration
 ├── requirements.txt        # Core dependencies
@@ -137,7 +214,7 @@ lora-data-toolkit/
 │       ├── export_page.py
 │       ├── training_page.py    # LoRA training + HF auto-resolution
 │       ├── merge_page.py       # Model merging
-│       ├── setup_page.py       # GPU detection + dep installer
+│       ├── setup_page.py       # GPU detection + step-by-step installer
 │       └── settings_page.py
 │
 └── data/                   # Runtime data (gitignored)
@@ -145,36 +222,6 @@ lora-data-toolkit/
     ├── exports/            # Exported training files
     └── settings.json       # User preferences
 ```
-
----
-
-## Training Workflow
-
-1. **Collect data** using any of the 7 sources
-2. **Review** in the Data Library — edit, score, remove low-quality entries
-3. **Export** as Alpaca JSONL format → `data/exports/training_data.jsonl`
-4. Go to **Train Model** page
-5. **Select your Ollama model** (e.g. `huihui_ai/qwen3-abliterated:14b`)
-6. App auto-resolves → `huihui-ai/Qwen3-14B-abliterated` (abliterated HF repo!)
-7. **Configure** LoRA params (rank, alpha, epochs, etc.)
-8. **Generate + Launch** → training runs in a new console
-9. After training → **import to Ollama** and run your fine-tuned model
-
-### Supported Model Families
-Auto-mapping works for: **Qwen3, Qwen2.5, Llama 3/3.1/3.2, Gemma 2/3, Mistral, Mixtral, DeepSeek, Phi-3/4, Dolphin** — including abliterated/uncensored variants.
-
----
-
-## VRAM Requirements (4-bit QLoRA)
-
-| VRAM | Model Size | Examples |
-|------|-----------|----------|
-| 4 GB | 1B-3B | Phi-3 Mini, Qwen2.5-3B |
-| 8 GB | 7B-8B | Mistral-7B, Llama 3.1-8B |
-| 12 GB | 9B-14B | Gemma-3-12B, Qwen3-14B |
-| 16 GB | 14B-27B | Qwen3-14B ✓, Gemma-3-27B |
-| 24 GB | 30B-32B | Qwen2.5-32B, Qwen3-30B-A3B |
-| 48 GB | 70B | Llama 3.1-70B |
 
 ---
 
@@ -192,12 +239,25 @@ Auto-mapping works for: **Qwen3, Qwen2.5, Llama 3/3.1/3.2, Gemma 2/3, Mistral, M
 
 ---
 
-## License
+## Contributing
 
-MIT — do whatever you want with it.
+Issues, PRs, feature requests welcome! Especially:
+
+- More data sources (Reddit, Discord export, etc.)
+- Better CPU training (llama.cpp integration?)
+- Auto-captioning with LLaVA/CLIP
+- Linux/Mac testing
 
 ---
 
-## Contributing
+## License & Commercial Use
 
-Pull requests welcome. This started as a personal tool for collecting game security / cheat detection training data, but it works for any domain.
+MIT licensed — free to use, modify, distribute (even commercially), as long as you keep the copyright notice.
+
+If you're thinking of building a paid product around this: go for it! Just give credit in your docs/about page.
+
+---
+
+Made with ❤️ in Connecticut
+
+If this saves you hours stitching tools together — star it or buy me a coffee ☕
