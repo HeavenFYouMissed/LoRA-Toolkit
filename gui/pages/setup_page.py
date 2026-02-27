@@ -710,6 +710,14 @@ class SetupPage(ctk.CTkFrame):
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 
+    @staticmethod
+    def _clean_pip_output(raw: str) -> str:
+        """Strip pip [notice] lines (e.g. 'a new release of pip is available')."""
+        return "\n".join(
+            ln for ln in raw.splitlines()
+            if not ln.strip().startswith("[notice]")
+        )
+
     def _run_pip(self, label: str, cmd, *, shell=False, timeout=600):
         """Run a pip command, log output, return True on success."""
         self._log(f"\n--- {label} ---")
@@ -721,7 +729,9 @@ class SetupPage(ctk.CTkFrame):
                 capture_output=True, text=True, timeout=timeout,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-            out = (r.stdout or "") + (r.stderr or "")
+            out = self._clean_pip_output(
+                (r.stdout or "") + (r.stderr or "")
+            )
             # Trim huge output but keep last chunk
             if len(out) > 3000:
                 out = out[:500] + "\n... (trimmed) ...\n" + out[-1500:]
@@ -741,6 +751,12 @@ class SetupPage(ctk.CTkFrame):
         self.status.set_working("Step 1 -- Installing core dependencies...")
 
         def _do():
+            # Silently upgrade pip itself first so "[notice]" never appears
+            self._run_pip(
+                "Upgrading pip",
+                [sys.executable, "-m", "pip", "install", "--upgrade", "pip"],
+                timeout=60,
+            )
             ok = self._run_pip(
                 "Step 1: Core Dependencies",
                 _pip_cmd(*CORE_DEPS),
