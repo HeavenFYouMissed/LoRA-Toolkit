@@ -1448,15 +1448,17 @@ class TrainingPage(ctk.CTkFrame):
 
         def _do():
             try:
-                # Wrap in cmd /K so the console stays open on error
-                # cmd /K runs the command then keeps the window open
+                # Build the full command as a single string for cmd /K.
+                # Using a string (not list) avoids subprocess double-quoting
+                # the path, which makes cmd choke on it.
+                cmd_line = (
+                    f'"{venv_python}" "{script_path}" & '
+                    f'if errorlevel 1 ('
+                    f'echo. & echo [ERROR] Training crashed — see above. & pause'
+                    f')'
+                )
                 subprocess.Popen(
-                    [
-                        "cmd", "/K",
-                        f'"{venv_python}" "{script_path}" & '
-                        f'if errorlevel 1 (echo. & echo '
-                        f'[ERROR] Training crashed — see above. & pause)'
-                    ],
+                    f'cmd /K {cmd_line}',
                     creationflags=subprocess.CREATE_NEW_CONSOLE,
                     cwd=DATA_DIR,
                 )
