@@ -33,6 +33,9 @@ class CleanerPage(ctk.CTkFrame):
         self._current_entry = None
         self._attempt = 1
         self._cleaning = False
+        self._cancel_requested = False   # signal worker to stop sending tokens
+        self._token_buffer = []          # batch tokens to reduce UI updates
+        self._flush_pending = False      # is a flush already scheduled?
         self._settings = load_settings()
         self._provider = self._settings.get("ai_provider", "local")
         self._build_ui()
@@ -668,6 +671,7 @@ class CleanerPage(ctk.CTkFrame):
         self._skipped = 0
         self._saved = 0
         self._cleaning = True
+        self._cancel_requested = False
         self.btn_start.configure(state="disabled")
         self.btn_cancel.configure(state="normal")
         self.progress.reset()
@@ -732,8 +736,11 @@ class CleanerPage(ctk.CTkFrame):
 
     def _cancel_batch(self):
         self._cleaning = False
+        self._cancel_requested = True
+        self._token_buffer.clear()
         self.btn_cancel.configure(state="disabled")
         self.btn_start.configure(state="normal")
+        self._set_decision_buttons("disabled")
         self.progress.stop("Cancelled")
         self.status.set_status("Batch cancelled")
 
@@ -798,15 +805,30 @@ class CleanerPage(ctk.CTkFrame):
         grok_key = self._settings.get("grok_api_key", "")
         grok_model = self.model_menu.get()
         self._first_token = True
+        self._token_buffer = []
+        self._flush_pending = False
+        self._cancel_requested = False
+
+        def _flush_tokens():
+            """Flush buffered tokens to the textbox in one batch."""
+            self._flush_pending = False
+            if not self._token_buffer:
+                return
+            batch = "".join(self._token_buffer)
+            self._token_buffer.clear()
+            if self._first_token:
+                self._first_token = False
+                self.clean_text.delete("1.0", "end")
+            self.clean_text.insert("end", batch)
 
         def on_token(text):
-            """Push each token to the UI as it arrives from Ollama."""
-            def _append(t=text):
-                if self._first_token:
-                    self._first_token = False
-                    self.clean_text.delete("1.0", "end")
-                self.clean_text.insert("end", t)
-            self.after(0, _append)
+            """Buffer tokens and flush to UI every 50ms to prevent event-loop flooding."""
+            if self._cancel_requested:
+                return   # discard tokens after cancel
+            self._token_buffer.append(text)
+            if not self._flush_pending:
+                self._flush_pending = True
+                self.after(50, _flush_tokens)
 
         def worker():
             result = clean_text(
@@ -822,7 +844,10 @@ class CleanerPage(ctk.CTkFrame):
                 grok_api_key=grok_key,
                 grok_model=grok_model,
             )
-            self.after(0, lambda: self._finalize_result(entry, result))
+            if not self._cancel_requested:
+                # Final flush of any remaining buffered tokens
+                self.after(0, _flush_tokens)
+                self.after(60, lambda: self._finalize_result(entry, result))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -863,7 +888,12 @@ class CleanerPage(ctk.CTkFrame):
 
         Uses a simple line-based diff: green lines are new/changed,
         red highlights in the original pane for removed content.
+        Skips diff on very large texts to avoid UI stalling.
         """
+        # Guard: skip diff coloring for very large texts (> 3000 lines)
+        # to prevent the UI from locking up
+        if len(original) > 200_000 or len(cleaned) > 200_000:
+            return
         try:
             import difflib
         except ImportError:
@@ -871,6 +901,8 @@ class CleanerPage(ctk.CTkFrame):
 
         orig_lines = original.splitlines(keepends=True)
         clean_lines = cleaned.splitlines(keepends=True)
+        if len(orig_lines) > 3000 or len(clean_lines) > 3000:
+            return
 
         # Configure tags for the cleaned pane
         try:
