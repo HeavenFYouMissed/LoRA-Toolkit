@@ -19,6 +19,7 @@ import customtkinter as ctk
 from gui.theme import COLORS, FONT_FAMILY, FONT_SIZES
 from gui.widgets import (
     PageHeader, InputField, ActionButton, StatusBar, Tooltip, ContentPreview,
+    ProgressIndicator, PlaceholderEntry,
 )
 from core.database import get_all_entries, get_stats
 from config import EXPORTS_DIR, DATA_DIR
@@ -384,14 +385,9 @@ class TrainingPage(ctk.CTkFrame):
             text_color=COLORS["text_muted"],
         ).pack(anchor="w")
 
-        self.hf_override = ctk.CTkEntry(
+        self.hf_override = PlaceholderEntry(
             self.override_frame,
-            placeholder_text="e.g. Qwen/Qwen3-14B  or  unsloth/Qwen3-14B-bnb-4bit",
-            font=(FONT_FAMILY, FONT_SIZES["body"]),
-            fg_color=COLORS["bg_input"],
-            text_color=COLORS["text_primary"],
-            border_color=COLORS["border"],
-            border_width=1, corner_radius=6,
+            hint_text="e.g. Qwen/Qwen3-14B  or  unsloth/Qwen3-14B-bnb-4bit",
             width=500, height=32,
         )
         self.hf_override.pack(anchor="w", pady=(2, 0))
@@ -483,7 +479,48 @@ class TrainingPage(ctk.CTkFrame):
         lora_inner.pack(fill="x", padx=15, pady=10)
 
         self._heading(lora_inner, "⚙  LoRA Configuration")
-        self._hint(lora_inner, "Hover any field for explanation and recommended values.")
+        self._hint(lora_inner, "Pick a preset or customize individual values. Hover any field for details.")
+
+        # ── Preset Buttons ──────────────────────────────
+        preset_row = ctk.CTkFrame(lora_inner, fg_color="transparent")
+        preset_row.pack(fill="x", pady=(0, 8))
+
+        ctk.CTkLabel(
+            preset_row, text="Presets:",
+            font=(FONT_FAMILY, FONT_SIZES["small"], "bold"),
+            text_color=COLORS["text_muted"],
+        ).pack(side="left", padx=(0, 8))
+
+        self._presets = {
+            "⚡ Quick":    {"rank": "8",  "alpha": "16",  "epochs": "1", "batch": "8",  "lr": "2e-4",  "seq": "1024"},
+            "⚖ Balanced": {"rank": "16", "alpha": "32",  "epochs": "3", "batch": "4",  "lr": "2e-4",  "seq": "2048"},
+            "🎯 Quality": {"rank": "32", "alpha": "64",  "epochs": "5", "batch": "2",  "lr": "1e-4",  "seq": "2048"},
+            "🔬 Max":     {"rank": "64", "alpha": "128", "epochs": "8", "batch": "1",  "lr": "5e-5",  "seq": "4096"},
+        }
+
+        self._preset_btns = {}
+        for label, vals in self._presets.items():
+            btn = ctk.CTkButton(
+                preset_row, text=label, width=100, height=30,
+                font=(FONT_FAMILY, FONT_SIZES["small"], "bold"),
+                fg_color=COLORS["bg_input"],
+                hover_color=COLORS["bg_hover"],
+                border_color=COLORS["border"],
+                border_width=1, corner_radius=6,
+                command=lambda v=vals, l=label: self._apply_preset(v, l),
+            )
+            btn.pack(side="left", padx=(0, 6))
+            self._preset_btns[label] = btn
+
+        # Tooltip descriptions for presets
+        tips = [
+            ("⚡ Quick",    "Fast test run.\nr=8  α=16  1 epoch  batch=8\nBest for: checking if training works"),
+            ("⚖ Balanced", "Good default.\nr=16  α=32  3 epochs  batch=4\nBest for: most fine-tuning tasks"),
+            ("🎯 Quality", "Higher quality, slower.\nr=32  α=64  5 epochs  batch=2\nBest for: important models, 16+ GB VRAM"),
+            ("🔬 Max",     "Maximum capacity.\nr=64  α=128  8 epochs  batch=1\nBest for: large datasets, 24+ GB VRAM"),
+        ]
+        for lbl, tip in tips:
+            Tooltip(self._preset_btns[lbl], tip)
 
         params_row = ctk.CTkFrame(lora_inner, fg_color="transparent")
         params_row.pack(fill="x")
@@ -669,6 +706,36 @@ class TrainingPage(ctk.CTkFrame):
         return None
 
     # ══════════════════════════════════════════════════════
+    #  LoRA Presets
+    # ══════════════════════════════════════════════════════
+
+    def _apply_preset(self, vals: dict, label: str):
+        """Fill LoRA config fields from a preset."""
+        self.rank_var.set(vals["rank"])
+        self.alpha_var.set(vals["alpha"])
+        self.epochs_var.set(vals["epochs"])
+        self.batch_var.set(vals["batch"])
+        self.lr_var.set(vals["lr"])
+        self.seq_var.set(vals["seq"])
+
+        # Highlight active preset button, dim others
+        for btn_label, btn in self._preset_btns.items():
+            if btn_label == label:
+                btn.configure(
+                    fg_color=COLORS["accent"],
+                    text_color=COLORS["text_primary"],
+                    border_color=COLORS["accent"],
+                )
+            else:
+                btn.configure(
+                    fg_color=COLORS["bg_input"],
+                    text_color=COLORS["text_primary"],
+                    border_color=COLORS["border"],
+                )
+
+        self.status.set_success(f"Preset applied: {label}")
+
+    # ══════════════════════════════════════════════════════
     #  Method Toggle
     # ══════════════════════════════════════════════════════
 
@@ -697,53 +764,87 @@ class TrainingPage(ctk.CTkFrame):
     def _check_deps(self):
         method = self.method_var.get()
         self.status.set_working("Checking dependencies…")
+        self.progress.reset()
+        self.btn_check.configure(state="disabled")
+
+        def _update(frac, text):
+            self.after(0, lambda: self.progress.set_progress(frac, text))
 
         def _do():
             results = []
 
             if method == "inject":
+                _update(0.3, "Checking Ollama…")
                 ok = shutil.which("ollama") is not None
                 results.append(("Ollama CLI", ok,
                                 "Available" if ok else "Not found — install from ollama.com"))
+                _update(0.7, "Checking models…")
                 if self.ollama_models:
                     results.append(("Local Models", True,
                                     f"{len(self.ollama_models)} model(s) detected"))
                 else:
                     results.append(("Local Models", False,
                                     "No models — run 'ollama pull <model>'"))
+                _update(1.0, "Done")
             else:
-                # ── Full LoRA deps ──
-                results.append(("Python", True, "Available"))
+                # ── Full LoRA deps — fast subprocess check ──
+                import importlib.metadata
+                importlib.invalidate_caches()
 
+                steps = 9
+                step = 0
+
+                # Python
+                step += 1; _update(step / steps, "Checking Python…")
+                import platform
+                results.append(("Python", True, f"v{platform.python_version()}"))
+
+                # CUDA GPU (subprocess to avoid stale cached torch)
+                step += 1; _update(step / steps, "Checking CUDA GPU…")
                 try:
-                    import torch
-                    cuda = torch.cuda.is_available()
-                    if cuda:
-                        gn = torch.cuda.get_device_name(0)
-                        vr = torch.cuda.get_device_properties(0).total_mem / 1e9
+                    import sys as _sys
+                    r = subprocess.run(
+                        [_sys.executable, "-c",
+                         "import torch; "
+                         "print(torch.cuda.is_available()); "
+                         "print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else ''); "
+                         "print(torch.cuda.get_device_properties(0).total_mem if torch.cuda.is_available() else 0)"],
+                        capture_output=True, text=True, timeout=30,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
+                    lines = r.stdout.strip().splitlines()
+                    has_cuda = lines[0].strip() == "True" if lines else False
+                    if has_cuda:
+                        gn = lines[1] if len(lines) > 1 else "GPU"
+                        vr = int(lines[2]) / 1e9 if len(lines) > 2 else 0
                         results.append(("CUDA GPU", True, f"{gn} ({vr:.1f} GB)"))
                     else:
                         results.append(("CUDA GPU", False,
-                                        "No CUDA GPU found — LoRA training requires NVIDIA GPU"))
-                except ImportError:
-                    results.append(("PyTorch", False, "pip install torch"))
+                                        "No CUDA GPU — LoRA training requires NVIDIA GPU"))
+                except Exception:
+                    results.append(("CUDA GPU", False, "Could not detect — is PyTorch installed?"))
 
+                # Package checks via metadata (fast, no import)
                 for pkg, label in [("unsloth", "Unsloth"),
                                    ("peft", "PEFT"),
                                    ("transformers", "Transformers"),
                                    ("trl", "TRL"),
                                    ("datasets", "Datasets")]:
+                    step += 1; _update(step / steps, f"Checking {label}…")
                     try:
-                        mod = __import__(pkg)
-                        results.append((label, True,
-                                        f"v{getattr(mod, '__version__', '?')}"))
-                    except ImportError:
+                        dist = importlib.metadata.distribution(pkg)
+                        results.append((label, True, f"v{dist.version}"))
+                    except importlib.metadata.PackageNotFoundError:
                         results.append((label, False, f"pip install {pkg}"))
 
+                # Ollama
+                step += 1; _update(step / steps, "Checking Ollama…")
                 ok = shutil.which("ollama") is not None
                 results.append(("Ollama CLI", ok,
                                 "Available" if ok else "Optional — needed for final import"))
 
+                # Model
+                step += 1; _update(step / steps, "Checking model…")
                 mid = self._get_training_model_id()
                 if mid:
                     results.append(("Training Model", True, mid))
@@ -756,6 +857,7 @@ class TrainingPage(ctk.CTkFrame):
         threading.Thread(target=_do, daemon=True).start()
 
     def _show_dep_results(self, results):
+        self.btn_check.configure(state="normal")
         lines = ["# Dependency Check\n"]
         all_ok = True
         for name, ok, msg in results:
@@ -764,8 +866,11 @@ class TrainingPage(ctk.CTkFrame):
                 all_ok = False
         if all_ok:
             lines.append("\n🎉 All good — you're ready to go!")
+            self.progress.stop("All dependencies ready ✓")
         else:
             lines.append("\n⚠ Fix the items above before continuing.")
+            self.progress.set_progress(1.0, "⚠ Some dependencies missing")
+            self.progress.bar.configure(progress_color=COLORS["error"])
         self.output.set_text("\n".join(lines))
         if all_ok:
             self.status.set_success("All dependencies ready")

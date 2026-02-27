@@ -14,7 +14,7 @@ import os, platform, subprocess, sys, threading, re
 import customtkinter as ctk
 
 from gui.theme  import COLORS, FONT_FAMILY, FONT_SIZES
-from gui.widgets import PageHeader, ActionButton, StatusBar, Tooltip
+from gui.widgets import PageHeader, ActionButton, StatusBar, Tooltip, ProgressIndicator
 
 
 # ---------------------------------------------------------------
@@ -309,6 +309,9 @@ class SetupPage(ctk.CTkFrame):
         )
         self.lbl_step1.pack(side="left")
 
+        self.prog_step1 = ProgressIndicator(s1)
+        self.prog_step1.pack(fill="x", pady=(6, 0))
+
         # -- Step 2: PyTorch + CUDA ----------------------------
         s2 = self._card(c)
         self._step_header(s2, "2", "PyTorch + CUDA 12.4",
@@ -335,6 +338,9 @@ class SetupPage(ctk.CTkFrame):
             text_color=COLORS["text_muted"],
         )
         self.lbl_step2.pack(side="left")
+
+        self.prog_step2 = ProgressIndicator(s2)
+        self.prog_step2.pack(fill="x", pady=(6, 0))
 
         # -- Step 3: Training stack ----------------------------
         s3 = self._card(c)
@@ -363,6 +369,9 @@ class SetupPage(ctk.CTkFrame):
             text_color=COLORS["text_muted"],
         )
         self.lbl_step3.pack(side="left")
+
+        self.prog_step3 = ProgressIndicator(s3)
+        self.prog_step3.pack(fill="x", pady=(6, 0))
 
         # -- Check All button ----------------------------------
         chk_row = ctk.CTkFrame(c, fg_color="transparent")
@@ -771,6 +780,7 @@ class SetupPage(ctk.CTkFrame):
     def _install_step1(self):
         self.btn_step1.configure(state="disabled", text="\u23f3  Installing...")
         self.status.set_working("Step 1 -- Installing core dependencies...")
+        self.prog_step1.start_indeterminate("Upgrading pip & installing core packages\u2026")
 
         def _do():
             # Silently upgrade pip itself first so "[notice]" never appears
@@ -779,6 +789,7 @@ class SetupPage(ctk.CTkFrame):
                 [sys.executable, "-m", "pip", "install", "--upgrade", "pip"],
                 timeout=60,
             )
+            self.after(0, lambda: self.prog_step1.set_phase("Installing core packages\u2026"))
             ok = self._run_pip(
                 "Step 1: Core Dependencies",
                 _pip_cmd(*CORE_DEPS),
@@ -806,6 +817,7 @@ class SetupPage(ctk.CTkFrame):
 
         self.btn_step2.configure(state="disabled", text="\u23f3  Installing...")
         self.status.set_working("Step 2 -- Installing PyTorch + CUDA 12.4  (large download)...")
+        self.prog_step2.start_indeterminate("Downloading PyTorch + CUDA (~2.5 GB)\u2026")
 
         def _do():
             ok = self._run_pip(
@@ -831,6 +843,7 @@ class SetupPage(ctk.CTkFrame):
 
         self.btn_step3.configure(state="disabled", text="\u23f3  Installing...")
         self.status.set_working("Step 3 -- Installing Unsloth + training libraries...")
+        self.prog_step3.start_indeterminate("Installing Unsloth from GitHub\u2026")
 
         def _do():
             # 3a: Unsloth from git
@@ -846,6 +859,7 @@ class SetupPage(ctk.CTkFrame):
             self.after(0, lambda: self.status.set_working(
                 "Step 3b -- Installing PEFT, TRL, Transformers..."
             ))
+            self.after(0, lambda: self.prog_step3.set_phase("Installing PEFT, TRL, Transformers\u2026"))
             ok_rest = self._run_pip(
                 "Step 3b: PEFT + TRL + Transformers + more",
                 _pip_cmd(*TRAINING_PKGS),
@@ -861,6 +875,7 @@ class SetupPage(ctk.CTkFrame):
 
     def _step_done(self, step: int, ok: bool):
         btns  = {1: self.btn_step1, 2: self.btn_step2, 3: self.btn_step3}
+        progs = {1: self.prog_step1, 2: self.prog_step2, 3: self.prog_step3}
         names = {
             1: "\u2460  Install Core",
             2: "\u2461  Install PyTorch + CUDA",
@@ -869,9 +884,12 @@ class SetupPage(ctk.CTkFrame):
         btns[step].configure(state="normal", text=names[step])
 
         if ok:
+            progs[step].stop(f"Step {step} installed \u2713")
             self._log(f"\n\u2705  Step {step} complete!\n")
             self.status.set_success(f"Step {step} installed successfully!")
         else:
+            progs[step].set_progress(1.0, f"Step {step} had errors")
+            progs[step].bar.configure(progress_color=COLORS["error"])
             self._log(f"\n\u274c  Step {step} had errors -- scroll up for details.\n")
             self.status.set_error(f"Step {step} had errors -- check the log above")
 

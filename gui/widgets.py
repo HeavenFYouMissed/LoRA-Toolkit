@@ -263,6 +263,143 @@ class ActionButton(ctk.CTkButton):
         )
 
 
+# ─── Animated Progress Indicator ──────────────────────────────────
+
+class ProgressIndicator(ctk.CTkFrame):
+    """
+    Animated progress bar with phase label, percentage, and ETA.
+
+    Modes:
+      • determinate  – call set_progress(0.0 … 1.0)
+      • indeterminate – call start_indeterminate() for a pulsing bar
+    """
+
+    def __init__(self, parent, height=22, **kwargs):
+        super().__init__(parent, fg_color="transparent", height=height + 24, **kwargs)
+        self.pack_propagate(False)
+
+        # Phase label row  (e.g.  "Checking PyTorch…  42%")
+        top = ctk.CTkFrame(self, fg_color="transparent")
+        top.pack(fill="x")
+
+        self.phase_label = ctk.CTkLabel(
+            top, text="",
+            font=(FONT_FAMILY, FONT_SIZES["small"]),
+            text_color=COLORS["text_secondary"],
+        )
+        self.phase_label.pack(side="left")
+
+        self.pct_label = ctk.CTkLabel(
+            top, text="",
+            font=(FONT_FAMILY, FONT_SIZES["small"], "bold"),
+            text_color=COLORS["accent"],
+        )
+        self.pct_label.pack(side="right")
+
+        # Bar
+        self.bar = ctk.CTkProgressBar(
+            self, height=height,
+            fg_color=COLORS["bg_input"],
+            progress_color=COLORS["accent"],
+            corner_radius=height // 2,
+        )
+        self.bar.pack(fill="x", pady=(3, 0))
+        self.bar.set(0)
+
+        self._indeterminate = False
+        self._pulse_pos = 0.0
+        self._pulse_dir = 1
+
+    def set_phase(self, text: str):
+        """Update the phase label (e.g. 'Checking PyTorch…')."""
+        self.phase_label.configure(text=text)
+
+    def set_progress(self, fraction: float, text: str = ""):
+        """Set determinate progress (0.0 – 1.0)."""
+        self._indeterminate = False
+        fraction = max(0.0, min(1.0, fraction))
+        self.bar.set(fraction)
+        pct = int(fraction * 100)
+        self.pct_label.configure(text=f"{pct}%")
+        if text:
+            self.phase_label.configure(text=text)
+
+    def start_indeterminate(self, text: str = "Working…"):
+        """Start a pulsing animation for unknown-duration tasks."""
+        self._indeterminate = True
+        self.phase_label.configure(text=text)
+        self.pct_label.configure(text="")
+        self._pulse()
+
+    def stop(self, text: str = "Done"):
+        """Stop animation and show completion."""
+        self._indeterminate = False
+        self.bar.set(1.0)
+        self.phase_label.configure(text=text)
+        self.pct_label.configure(text="✓")
+        self.bar.configure(progress_color=COLORS["accent_green"])
+
+    def reset(self):
+        """Reset to empty state."""
+        self._indeterminate = False
+        self.bar.set(0)
+        self.bar.configure(progress_color=COLORS["accent"])
+        self.phase_label.configure(text="")
+        self.pct_label.configure(text="")
+
+    def _pulse(self):
+        """Animate indeterminate bar with a bouncing pulse."""
+        if not self._indeterminate:
+            return
+        self._pulse_pos += 0.02 * self._pulse_dir
+        if self._pulse_pos >= 0.95:
+            self._pulse_dir = -1
+        elif self._pulse_pos <= 0.05:
+            self._pulse_dir = 1
+        self.bar.set(self._pulse_pos)
+        self.after(30, self._pulse)
+
+
+# ─── Placeholder Entry (fixes CTk placeholder bug) ───────────────
+
+class PlaceholderEntry(ctk.CTkFrame):
+    """
+    Entry with a permanent hint label below it (not inside).
+    Avoids the CTkEntry placeholder bug where text disappears on window focus.
+    """
+
+    def __init__(self, parent, hint_text="", width=500, height=32, **kwargs):
+        super().__init__(parent, fg_color="transparent", **kwargs)
+
+        self.entry = ctk.CTkEntry(
+            self,
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            fg_color=COLORS["bg_input"],
+            text_color=COLORS["text_primary"],
+            border_color=COLORS["border"],
+            border_width=1, corner_radius=6,
+            width=width, height=height,
+        )
+        self.entry.pack(anchor="w")
+
+        if hint_text:
+            ctk.CTkLabel(
+                self, text=f"💡 {hint_text}",
+                font=(FONT_FAMILY, FONT_SIZES["tiny"]),
+                text_color=COLORS["text_muted"],
+            ).pack(anchor="w", pady=(1, 0))
+
+    def get(self):
+        return self.entry.get().strip()
+
+    def set(self, text):
+        self.entry.delete(0, "end")
+        self.entry.insert(0, text)
+
+    def clear(self):
+        self.entry.delete(0, "end")
+
+
 class TagInput(ctk.CTkFrame):
     """Tags and category input fields."""
 
