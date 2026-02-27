@@ -156,6 +156,74 @@ class SettingsPage(ctk.CTkFrame):
             self.tess_entry.insert(0, self.settings["tesseract_path"])
         Tooltip(self.tess_entry, "Full path to tesseract.exe on your system.\nLeave blank to auto-detect common install locations.\nDownload from: github.com/UB-Mannheim/tesseract/wiki")
 
+        # ─── AI / Ollama Section ────────────────────────────
+        self._section_label(container, "🤖  AI / Ollama")
+
+        ai_frame = ctk.CTkFrame(container, fg_color=COLORS["bg_card"], corner_radius=10)
+        ai_frame.pack(fill="x", pady=(0, 15))
+
+        # Ollama URL
+        url_row = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        url_row.pack(fill="x", padx=15, pady=(12, 6))
+
+        ctk.CTkLabel(
+            url_row, text="Ollama URL:",
+            font=(FONT_FAMILY, FONT_SIZES["body"], "bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 10))
+
+        self.ollama_url_entry = ctk.CTkEntry(
+            url_row, width=300,
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            fg_color=COLORS["bg_input"],
+            text_color=COLORS["text_primary"],
+            border_color=COLORS["border"],
+            border_width=1, corner_radius=8, height=32,
+            placeholder_text="http://localhost:11434",
+        )
+        self.ollama_url_entry.pack(side="left")
+        self.ollama_url_entry.insert(0, self.settings.get("ollama_url", DEFAULTS["ollama_url"]))
+        Tooltip(self.ollama_url_entry,
+                "The URL where Ollama is running.\n"
+                "Default: http://localhost:11434\n"
+                "Change this if Ollama runs on another machine.")
+
+        # Default model
+        model_row = ctk.CTkFrame(ai_frame, fg_color="transparent")
+        model_row.pack(fill="x", padx=15, pady=(0, 6))
+
+        ctk.CTkLabel(
+            model_row, text="Default Model:",
+            font=(FONT_FAMILY, FONT_SIZES["body"], "bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 10))
+
+        self.ollama_model_entry = ctk.CTkEntry(
+            model_row, width=200,
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            fg_color=COLORS["bg_input"],
+            text_color=COLORS["text_primary"],
+            border_color=COLORS["border"],
+            border_width=1, corner_radius=8, height=32,
+            placeholder_text="llama3.2:3b",
+        )
+        self.ollama_model_entry.pack(side="left")
+        self.ollama_model_entry.insert(0, self.settings.get("ollama_model", DEFAULTS["ollama_model"]))
+        Tooltip(self.ollama_model_entry,
+                "Default Ollama model for AI Cleaner and Chat.\n"
+                "Must already be pulled (see Setup page).\n"
+                "Examples: llama3.2:3b, mistral:7b, qwen2.5:7b")
+
+        ai_hint = ctk.CTkLabel(
+            ai_frame,
+            text="💡  Pull models from the Setup / GPU page.  "
+                 "Smaller models (3B) are faster, larger models (7B+) give better results.",
+            font=(FONT_FAMILY, FONT_SIZES["small"]),
+            text_color=COLORS["text_muted"],
+            wraplength=600, justify="left",
+        )
+        ai_hint.pack(anchor="w", padx=15, pady=(0, 12))
+
         # ─── Export Defaults Section ────────────────────────
         self._section_label(container, "🚀  Export Defaults")
 
@@ -314,6 +382,8 @@ class SettingsPage(ctk.CTkFrame):
             "hotkey_quick_ocr": self.hk_ocr.get().strip(),
             "hotkey_quick_paste": self.hk_paste.get().strip(),
             "tesseract_path": self.tess_entry.get().strip(),
+            "ollama_url": self.ollama_url_entry.get().strip() or DEFAULTS["ollama_url"],
+            "ollama_model": self.ollama_model_entry.get().strip() or DEFAULTS["ollama_model"],
             "default_chunk_size": self._safe_int(self.chunk_entry.get(), 512),
             "default_system_prompt": self.prompt_text.get("1.0", "end-1c").strip(),
             "request_timeout": self._safe_int(self.timeout_entry.get(), 30),
@@ -371,6 +441,11 @@ class SettingsPage(ctk.CTkFrame):
         self.hk_paste.delete(0, "end")
 
         self.tess_entry.delete(0, "end")
+
+        self.ollama_url_entry.delete(0, "end")
+        self.ollama_url_entry.insert(0, DEFAULTS["ollama_url"])
+        self.ollama_model_entry.delete(0, "end")
+        self.ollama_model_entry.insert(0, DEFAULTS["ollama_model"])
 
         self.chunk_entry.delete(0, "end")
         self.chunk_entry.insert(0, str(DEFAULTS["default_chunk_size"]))

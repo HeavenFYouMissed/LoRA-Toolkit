@@ -315,6 +315,14 @@ class CleanerPage(ctk.CTkFrame):
                 "Each regeneration is more aggressive about\n"
                 "cutting fluff and improving density.")
 
+        self.btn_skip = ActionButton(
+            dec_row, text="⏭  Skip", command=self._skip_entry,
+            style="secondary", width=100,
+        )
+        self.btn_skip.pack(side="left", padx=(0, 8))
+        self.btn_skip.configure(state="disabled")
+        Tooltip(self.btn_skip, "Skip this entry without saving anything\nand move to the next one in the batch.")
+
         self.btn_edit_save = ActionButton(
             dec_row, text="✏️  Save Edited", command=self._save_edited,
             style="primary", width=140,
@@ -455,17 +463,75 @@ class CleanerPage(ctk.CTkFrame):
             return
 
         if not is_ollama_running():
-            self.status.set_error("Ollama not running — start it first (ollama serve)")
+            self._show_ollama_popup()
             return
 
         self._queue = selected
         self._queue_idx = 0
+        self._skipped = 0
+        self._saved = 0
         self._cleaning = True
         self.btn_start.configure(state="disabled")
         self.btn_cancel.configure(state="normal")
         self.progress.reset()
         self.status.set_working(f"Cleaning 0/{len(self._queue)}...")
         self._process_next()
+
+    def _show_ollama_popup(self):
+        """Show a friendly popup explaining how to start Ollama."""
+        popup = ctk.CTkToplevel(self)
+        popup.title("Ollama Not Running")
+        popup.geometry("440x280")
+        popup.resizable(False, False)
+        popup.attributes("-topmost", True)
+        popup.configure(fg_color=COLORS["bg_dark"])
+        popup.grab_set()
+
+        # Center on parent
+        popup.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - 440) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - 280) // 2
+        popup.geometry(f"+{x}+{y}")
+
+        inner = ctk.CTkFrame(popup, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=20, pady=20)
+
+        ctk.CTkLabel(
+            inner, text="🦙  Ollama Not Running",
+            font=(FONT_FAMILY, FONT_SIZES["heading"], "bold"),
+            text_color=COLORS["text_primary"],
+        ).pack(anchor="w", pady=(0, 10))
+
+        ctk.CTkLabel(
+            inner,
+            text=(
+                "The AI Cleaner needs Ollama running locally.\n\n"
+                "How to start:\n"
+                "  1. Open a terminal and run:  ollama serve\n"
+                "  2. Or go to Setup / GPU page → click 'Start Ollama'\n\n"
+                "If you haven't installed Ollama yet:\n"
+                "  • Go to Setup / GPU page → click 'Download Ollama'\n"
+                "  • Or download from https://ollama.com"
+            ),
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            text_color=COLORS["text_secondary"],
+            justify="left", wraplength=400,
+        ).pack(anchor="w", fill="x")
+
+        btn_row = ctk.CTkFrame(inner, fg_color="transparent")
+        btn_row.pack(fill="x", pady=(15, 0))
+
+        ActionButton(
+            btn_row, text="Go to Setup",
+            command=lambda: (popup.destroy(), self.app.show_page("setup") if self.app else None),
+            style="primary", width=130,
+        ).pack(side="left", padx=(0, 8))
+
+        ActionButton(
+            btn_row, text="Close",
+            command=popup.destroy,
+            style="secondary", width=100,
+        ).pack(side="left")
 
     def _cancel_batch(self):
         self._cleaning = False
@@ -489,8 +555,15 @@ class CleanerPage(ctk.CTkFrame):
 
         self._current_entry = entry
         self._attempt = 1
-        frac = self._queue_idx / len(self._queue)
-        self.progress.set_progress(frac, f"Cleaning {self._queue_idx + 1}/{len(self._queue)}")
+        total = len(self._queue)
+        idx = self._queue_idx + 1
+        frac = self._queue_idx / total
+        title_short = entry["title"][:40]
+        self.progress.set_progress(
+            frac,
+            f"[{idx}/{total}]  {title_short}  •  "
+            f"{self._saved} saved, {self._skipped} skipped"
+        )
 
         self._run_clean(entry)
 
@@ -517,12 +590,16 @@ class CleanerPage(ctk.CTkFrame):
         threading.Thread(target=worker, daemon=True).start()
 
     def _show_result(self, entry, result):
-        """Display original vs cleaned in the review panes."""
+        """Display original vs cleaned in the review panes with diff highlighting."""
         # Update info bar
         ctype = result.get("content_type", "general")
+        stats = result.get("stats", {})
+        reduction = stats.get("reduction_pct", 0)
+        idx = self._queue_idx + 1
+        total = len(self._queue) if self._queue else 1
         self.review_info.configure(
-            text=f"#{entry['id']}  •  {entry['title'][:60]}  •  "
-                 f"detected: {ctype}  •  {result.get('explanation', '')}"
+            text=f"[{idx}/{total}]  #{entry['id']}  •  {entry['title'][:60]}  •  "
+                 f"type: {ctype}  •  {reduction:+.1f}% words  •  {result.get('explanation', '')}"
         )
 
         # Original pane (read-only)
@@ -533,11 +610,15 @@ class CleanerPage(ctk.CTkFrame):
         ow = len(entry["content"].split())
         self.orig_word_label.configure(text=f"{ow:,} words")
 
-        # Cleaned pane (editable)
+        # Cleaned pane (editable) with diff highlighting
+        cleaned = result.get("cleaned", "")
         self.clean_text.delete("1.0", "end")
-        self.clean_text.insert("1.0", result.get("cleaned", ""))
-        cw = len(result.get("cleaned", "").split())
+        self.clean_text.insert("1.0", cleaned)
+        cw = len(cleaned.split())
         self.clean_word_label.configure(text=f"{cw:,} words")
+
+        # Apply diff coloring
+        self._apply_diff_colors(entry["content"], cleaned)
 
         # Attempt label
         self.attempt_label.configure(text=f"Attempt {self._attempt}")
@@ -549,18 +630,99 @@ class CleanerPage(ctk.CTkFrame):
             self.status.set_error(result["explanation"])
             self._set_decision_buttons("normal")
 
+    def _apply_diff_colors(self, original: str, cleaned: str):
+        """Highlight differences between original and cleaned text with colors.
+
+        Uses a simple line-based diff: green lines are new/changed,
+        red highlights in the original pane for removed content.
+        """
+        try:
+            import difflib
+        except ImportError:
+            return
+
+        orig_lines = original.splitlines(keepends=True)
+        clean_lines = cleaned.splitlines(keepends=True)
+
+        # Configure tags for the cleaned pane
+        try:
+            self.clean_text._textbox.tag_configure(
+                "added", foreground="#4ade80",  # green
+            )
+            self.clean_text._textbox.tag_configure(
+                "changed", foreground="#60a5fa",  # blue
+            )
+        except Exception:
+            return
+
+        # Configure tags for the original pane
+        try:
+            self.orig_text.configure(state="normal")
+            self.orig_text._textbox.tag_configure(
+                "removed", foreground="#f87171",  # red
+            )
+        except Exception:
+            pass
+
+        matcher = difflib.SequenceMatcher(None, orig_lines, clean_lines)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "replace":
+                # Original: mark removed lines in red
+                for line_num in range(i1, i2):
+                    start = f"{line_num + 1}.0"
+                    end = f"{line_num + 1}.end"
+                    try:
+                        self.orig_text._textbox.tag_add("removed", start, end)
+                    except Exception:
+                        pass
+                # Cleaned: mark new lines in blue
+                for line_num in range(j1, j2):
+                    start = f"{line_num + 1}.0"
+                    end = f"{line_num + 1}.end"
+                    try:
+                        self.clean_text._textbox.tag_add("changed", start, end)
+                    except Exception:
+                        pass
+            elif tag == "delete":
+                # Lines removed — mark in original
+                for line_num in range(i1, i2):
+                    start = f"{line_num + 1}.0"
+                    end = f"{line_num + 1}.end"
+                    try:
+                        self.orig_text._textbox.tag_add("removed", start, end)
+                    except Exception:
+                        pass
+            elif tag == "insert":
+                # Lines added — mark in cleaned
+                for line_num in range(j1, j2):
+                    start = f"{line_num + 1}.0"
+                    end = f"{line_num + 1}.end"
+                    try:
+                        self.clean_text._textbox.tag_add("added", start, end)
+                    except Exception:
+                        pass
+
+        self.orig_text.configure(state="disabled")
+
     # ───────────────────────────────────────────────────────────────
     # DECISION BUTTONS
     # ───────────────────────────────────────────────────────────────
 
     def _set_decision_buttons(self, state):
         for btn in (self.btn_keep_orig, self.btn_keep_clean,
-                    self.btn_regen, self.btn_edit_save):
+                    self.btn_regen, self.btn_skip, self.btn_edit_save):
             btn.configure(state=state)
 
     def _keep_original(self):
         """Skip this entry — keep original text."""
+        self._skipped += 1
         self.status.set_status(f"Kept original for #{self._current_entry['id']}")
+        self._advance()
+
+    def _skip_entry(self):
+        """Skip to the next entry without any action."""
+        self._skipped += 1
+        self.status.set_status(f"Skipped #{self._current_entry['id']}")
         self._advance()
 
     def _keep_cleaned(self):
@@ -572,6 +734,7 @@ class CleanerPage(ctk.CTkFrame):
             return
 
         update_entry(self._current_entry["id"], content=cleaned)
+        self._saved += 1
         self.status.set_success(f"Updated #{self._current_entry['id']} with cleaned text")
         if self.app:
             self.app.refresh_stats()
@@ -585,6 +748,7 @@ class CleanerPage(ctk.CTkFrame):
             return
 
         update_entry(self._current_entry["id"], content=edited)
+        self._saved += 1
         self.status.set_success(f"Saved edited text for #{self._current_entry['id']}")
         if self.app:
             self.app.refresh_stats()
@@ -608,8 +772,15 @@ class CleanerPage(ctk.CTkFrame):
         self.btn_start.configure(state="normal")
         self.btn_cancel.configure(state="disabled")
         total = len(self._queue)
-        self.progress.stop(f"Done — reviewed {total} entries")
-        self.status.set_success(f"Batch complete: {total} entries reviewed")
+        saved = getattr(self, '_saved', 0)
+        skipped = getattr(self, '_skipped', 0)
+        self.progress.stop(
+            f"Done — {total} reviewed  •  {saved} saved  •  {skipped} skipped"
+        )
+        self.status.set_success(
+            f"Batch complete: {total} entries reviewed, "
+            f"{saved} saved, {skipped} skipped"
+        )
 
     # ───────────────────────────────────────────────────────────────
     # REFRESH (called when page becomes visible)

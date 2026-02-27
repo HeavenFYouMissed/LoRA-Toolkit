@@ -282,6 +282,48 @@ def is_ollama_running(api_url: str = DEFAULT_API_URL) -> bool:
         return False
 
 
+def chat(
+    messages: list[dict],
+    model: str = DEFAULT_MODEL,
+    api_url: str = DEFAULT_API_URL,
+) -> dict:
+    """
+    Multi-turn chat with Ollama via /api/chat.
+
+    *messages* is a list of {"role": "system"|"user"|"assistant", "content": "..."}.
+
+    Returns dict:
+        success: bool
+        reply:   str
+        error:   str (empty on success)
+    """
+    url = f"{api_url.rstrip('/')}/api/chat"
+    payload = json.dumps({
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "num_predict": 4096,
+        },
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+        reply = data.get("message", {}).get("content", "").strip()
+        return {"success": True, "reply": reply, "error": ""}
+    except urllib.error.URLError as e:
+        return {"success": False, "reply": "", "error": f"Cannot reach Ollama: {e}"}
+    except Exception as e:
+        return {"success": False, "reply": "", "error": str(e)}
+
+
 # ─── Internal ──────────────────────────────────────────────────────
 
 def _ollama_generate(prompt: str, model: str, api_url: str) -> str:

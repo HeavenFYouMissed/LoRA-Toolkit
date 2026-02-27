@@ -188,6 +188,7 @@ class App(ctk.CTk):
         manage_items = [
             ("library", "📚  Data Library"),
             ("cleaner", "🧹  AI Cleaner"),
+            ("chat", "💬  AI Chat"),
             ("export", "🚀  Export LoRA"),
         ]
         for page_id, label in manage_items:
@@ -323,6 +324,7 @@ class App(ctk.CTk):
         from gui.pages.setup_page import SetupPage
         from gui.pages.settings_page import SettingsPage
         from gui.pages.cleaner_page import CleanerPage
+        from gui.pages.chat_page import ChatPage
 
         page_classes = {
             "scraper": ScraperPage,
@@ -334,6 +336,7 @@ class App(ctk.CTk):
             "import": ImportPage,
             "library": LibraryPage,
             "cleaner": CleanerPage,
+            "chat": ChatPage,
             "export": ExportPage,
             "training": TrainingPage,
             "merge": MergePage,
@@ -375,8 +378,8 @@ class App(ctk.CTk):
             page.tkraise()
             self.current_page = page_id
 
-            # Refresh library/export/cleaner when switching to them
-            if page_id in ("library", "export", "settings", "cleaner") and hasattr(page, "refresh"):
+            # Refresh library/export/cleaner/chat when switching to them
+            if page_id in ("library", "export", "settings", "cleaner", "chat") and hasattr(page, "refresh"):
                 page.refresh()
 
         self._update_stats()

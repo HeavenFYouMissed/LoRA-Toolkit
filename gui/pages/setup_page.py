@@ -248,7 +248,11 @@ class SetupPage(ctk.CTkFrame):
 
         # -- Ollama --------------------------------------------
         ollama_card = self._card(c)
-        self._heading(ollama_card, "\U0001f999  Ollama")
+        self._heading(ollama_card, "\U0001f999  Ollama  (Local AI)")
+        self._hint(ollama_card,
+            "Ollama runs AI models locally on your machine.  "
+            "Needed for the AI Cleaner and AI Chat features."
+        )
 
         self.ollama_label = ctk.CTkLabel(
             ollama_card, text="Checking...",
@@ -257,6 +261,146 @@ class SetupPage(ctk.CTkFrame):
             justify="left", wraplength=600,
         )
         self.ollama_label.pack(anchor="w", pady=(4, 0))
+
+        ollama_btn_row = ctk.CTkFrame(ollama_card, fg_color="transparent")
+        ollama_btn_row.pack(fill="x", pady=(8, 0))
+
+        self.btn_install_ollama = ActionButton(
+            ollama_btn_row, text="\U0001f4e5  Download Ollama",
+            command=self._install_ollama,
+            style="primary", width=190,
+        )
+        self.btn_install_ollama.pack(side="left", padx=(0, 8))
+        Tooltip(self.btn_install_ollama,
+                "Download and install Ollama from ollama.com.\n"
+                "~100 MB installer — runs silently.")
+
+        self.btn_start_ollama = ActionButton(
+            ollama_btn_row, text="\u25b6  Start Ollama",
+            command=self._start_ollama,
+            style="secondary", width=140,
+        )
+        self.btn_start_ollama.pack(side="left", padx=(0, 8))
+        Tooltip(self.btn_start_ollama, "Start the Ollama background service\nso AI features work.")
+
+        self.btn_recheck_ollama = ActionButton(
+            ollama_btn_row, text="\U0001f504  Re-check",
+            command=self._recheck_ollama,
+            style="secondary", width=120,
+        )
+        self.btn_recheck_ollama.pack(side="left")
+
+        self.prog_ollama = ProgressIndicator(ollama_card)
+        self.prog_ollama.pack(fill="x", pady=(6, 0))
+
+        # -- Model Pull ----------------------------------------
+        model_card = self._card(c)
+        self._heading(model_card, "\U0001f4e6  Pull AI Models")
+        self._hint(model_card,
+            "Download a model to use with AI Cleaner and AI Chat.  "
+            "You need at least ONE model pulled."
+        )
+
+        # Recommended models list
+        RECOMMENDED_MODELS = [
+            ("llama3.2:3b",   "2 GB",  "Fast & light — great for cleaning"),
+            ("llama3.1:8b",   "4.7 GB","Balanced quality & speed"),
+            ("mistral:7b",    "4.1 GB","Strong general-purpose model"),
+            ("qwen2.5:7b",    "4.7 GB","Excellent multilingual support"),
+            ("gemma2:9b",     "5.4 GB","Google's latest — very capable"),
+            ("codellama:7b",  "3.8 GB","Specialised for code cleaning"),
+            ("phi3:mini",     "2.3 GB","Microsoft Phi-3 — tiny but smart"),
+            ("deepseek-coder:6.7b", "3.8 GB", "Great for code-heavy data"),
+        ]
+
+        self._pulled_models: list[str] = []
+
+        # Pulled models display
+        self.pulled_label = ctk.CTkLabel(
+            model_card, text="Checking installed models...",
+            font=(FONT_FAMILY, FONT_SIZES["small"]),
+            text_color=COLORS["text_muted"],
+            justify="left", wraplength=600,
+        )
+        self.pulled_label.pack(anchor="w", pady=(2, 6))
+
+        # Model selector + pull button
+        pull_row = ctk.CTkFrame(model_card, fg_color="transparent")
+        pull_row.pack(fill="x", pady=(0, 4))
+
+        ctk.CTkLabel(
+            pull_row, text="Model to pull:",
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
+
+        self.pull_model_menu = ctk.CTkOptionMenu(
+            pull_row,
+            values=[m[0] for m in RECOMMENDED_MODELS],
+            font=(FONT_FAMILY, FONT_SIZES["small"]),
+            fg_color=COLORS["bg_input"],
+            button_color=COLORS["accent"],
+            button_hover_color=COLORS["accent_hover"],
+            width=200, height=30,
+        )
+        self.pull_model_menu.pack(side="left", padx=(0, 8))
+
+        self.btn_pull = ActionButton(
+            pull_row, text="\u2b07  Pull Model",
+            command=self._pull_model,
+            style="success", width=140,
+        )
+        self.btn_pull.pack(side="left", padx=(0, 8))
+        Tooltip(self.btn_pull, "Download the selected model.\nFirst pull takes a while (2-5 GB).\nSubsequent pulls are quick (cached layers).")
+
+        # Custom model name
+        ctk.CTkLabel(
+            pull_row, text="or custom:",
+            font=(FONT_FAMILY, FONT_SIZES["small"]),
+            text_color=COLORS["text_muted"],
+        ).pack(side="left", padx=(8, 4))
+
+        self.custom_model_entry = ctk.CTkEntry(
+            pull_row, width=160, height=30,
+            placeholder_text="e.g. llama3:70b",
+            font=(FONT_FAMILY, FONT_SIZES["small"]),
+            fg_color=COLORS["bg_input"],
+            text_color=COLORS["text_primary"],
+            border_color=COLORS["border"],
+            border_width=1, corner_radius=6,
+        )
+        self.custom_model_entry.pack(side="left")
+        Tooltip(self.custom_model_entry,
+                "Type any model name from ollama.com/library.\n"
+                "Examples: llama3:70b, mixtral:8x7b, solar:10.7b")
+
+        self.prog_pull = ProgressIndicator(model_card)
+        self.prog_pull.pack(fill="x", pady=(6, 0))
+
+        # Recommended table
+        rec_label = ctk.CTkLabel(
+            model_card,
+            text="\U0001f4a1  Recommended Models",
+            font=(FONT_FAMILY, FONT_SIZES["small"], "bold"),
+            text_color=COLORS["text_secondary"],
+        )
+        rec_label.pack(anchor="w", pady=(8, 2))
+
+        rec_text = "Model               Size      Notes\n" + "\u2500" * 58 + "\n"
+        for name, size, note in RECOMMENDED_MODELS:
+            rec_text += f"{name:<20}{size:<10}{note}\n"
+        rec_text += (
+            "\n\U0001f449  For 8 GB VRAM: llama3.2:3b or phi3:mini\n"
+            "\U0001f449  For 12-16 GB VRAM: llama3.1:8b, mistral:7b, or qwen2.5:7b\n"
+            "\U0001f449  For 24+ GB VRAM: go wild — try gemma2:9b or bigger"
+        )
+
+        ctk.CTkLabel(
+            model_card, text=rec_text,
+            font=("Consolas", FONT_SIZES["small"]),
+            text_color=COLORS["text_secondary"],
+            justify="left",
+        ).pack(anchor="w")
 
         # ======================================================
         #  INSTALL STEPS -- big numbered cards
@@ -592,12 +736,16 @@ class SetupPage(ctk.CTkFrame):
                 text=f"\u2705  Ollama installed: {ollama_ver}",
                 text_color=COLORS["accent_green"],
             )
+            self.btn_install_ollama.configure(state="disabled")
         else:
             self.ollama_label.configure(
-                text="\u274c  Ollama not found -- install from https://ollama.com\n"
-                     "    Needed for running and importing models.",
+                text="\u274c  Ollama not found — click 'Download Ollama' to install,\n"
+                     "    or get it manually from https://ollama.com",
                 text_color=COLORS["accent_orange"],
             )
+
+        # Check pulled models
+        self._refresh_pulled_models()
 
         self.status.set_success("System detection complete")
         self._check_deps()
@@ -895,6 +1043,209 @@ class SetupPage(ctk.CTkFrame):
 
         # Re-check everything
         self.after(500, self._check_deps)
+
+    # ==========================================================
+    #  Ollama Install / Pull / Start
+    # ==========================================================
+
+    def _install_ollama(self):
+        """Download and silently install Ollama from ollama.com."""
+        self.btn_install_ollama.configure(state="disabled", text="\u23f3  Downloading...")
+        self.status.set_working("Downloading Ollama installer...")
+        self.prog_ollama.start_indeterminate("Downloading Ollama installer (~100 MB)\u2026")
+
+        def _do():
+            import urllib.request, tempfile
+            url = "https://ollama.com/download/OllamaSetup.exe"
+            tmp = os.path.join(tempfile.gettempdir(), "OllamaSetup.exe")
+            try:
+                self.after(0, lambda: self._log("--- Downloading Ollama ---"))
+                self.after(0, lambda: self._log(f"> {url}\n"))
+                urllib.request.urlretrieve(url, tmp)
+                self.after(0, lambda: self.prog_ollama.set_phase("Running installer\u2026"))
+                self.after(0, lambda: self._log("Download complete. Running installer...\n"))
+
+                # Silent install
+                r = subprocess.run(
+                    [tmp, "/VERYSILENT", "/NORESTART"],
+                    capture_output=True, text=True, timeout=300,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                success = r.returncode == 0
+                if success:
+                    self.after(0, lambda: self._log("\u2705  Ollama installed successfully!\n"))
+                else:
+                    out = (r.stdout or "") + (r.stderr or "")
+                    self.after(0, lambda: self._log(f"Installer output:\n{out}\n"))
+            except Exception as e:
+                success = False
+                self.after(0, lambda: self._log(f"Error: {e}\n"))
+
+            def _finish():
+                self.prog_ollama.stop("Done" if success else "Error")
+                self.btn_install_ollama.configure(
+                    state="normal", text="\U0001f4e5  Download Ollama"
+                )
+                if success:
+                    self.status.set_success("Ollama installed! Click 'Start Ollama' to begin.")
+                    self.ollama_label.configure(
+                        text="\u2705  Ollama installed — click 'Start Ollama' to run",
+                        text_color=COLORS["accent_green"],
+                    )
+                    self.btn_install_ollama.configure(state="disabled")
+                else:
+                    self.status.set_error("Ollama install failed — check log")
+            self.after(0, _finish)
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _start_ollama(self):
+        """Start the Ollama background service."""
+        self.status.set_working("Starting Ollama...")
+
+        def _do():
+            try:
+                # Try 'ollama serve' in background
+                subprocess.Popen(
+                    ["ollama", "serve"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
+                )
+                import time
+                time.sleep(3)
+
+                # Verify it's running
+                from core.ai_cleaner import is_ollama_running
+                if is_ollama_running():
+                    self.after(0, lambda: self.status.set_success("Ollama is running!"))
+                    self.after(0, lambda: self.ollama_label.configure(
+                        text="\u2705  Ollama running",
+                        text_color=COLORS["accent_green"],
+                    ))
+                    self.after(0, self._refresh_pulled_models)
+                else:
+                    self.after(0, lambda: self.status.set_error(
+                        "Ollama started but not responding — try again in a moment"
+                    ))
+            except FileNotFoundError:
+                self.after(0, lambda: self.status.set_error(
+                    "Ollama not found — install it first"
+                ))
+            except Exception as e:
+                self.after(0, lambda: self.status.set_error(f"Error starting Ollama: {e}"))
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _recheck_ollama(self):
+        """Re-run Ollama detection."""
+        self.ollama_label.configure(text="Checking...", text_color=COLORS["text_muted"])
+        self.pulled_label.configure(text="Checking...", text_color=COLORS["text_muted"])
+
+        def _do():
+            try:
+                r = subprocess.run(
+                    ["ollama", "--version"],
+                    capture_output=True, text=True, timeout=5,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                ver = r.stdout.strip() if r.returncode == 0 else None
+            except Exception:
+                ver = None
+
+            def _update():
+                if ver:
+                    self.ollama_label.configure(
+                        text=f"\u2705  Ollama installed: {ver}",
+                        text_color=COLORS["accent_green"],
+                    )
+                    self.btn_install_ollama.configure(state="disabled")
+                else:
+                    self.ollama_label.configure(
+                        text="\u274c  Ollama not found",
+                        text_color=COLORS["accent_orange"],
+                    )
+                    self.btn_install_ollama.configure(state="normal")
+                self._refresh_pulled_models()
+            self.after(0, _update)
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _refresh_pulled_models(self):
+        """Check which models are already pulled in Ollama."""
+        def _do():
+            from core.ai_cleaner import list_models
+            models = list_models()
+            self._pulled_models = models
+
+            def _update():
+                if models:
+                    self.pulled_label.configure(
+                        text=f"\u2705  {len(models)} model{'s' if len(models) != 1 else ''} installed:  "
+                             + ", ".join(models[:8])
+                             + ("..." if len(models) > 8 else ""),
+                        text_color=COLORS["accent_green"],
+                    )
+                else:
+                    self.pulled_label.configure(
+                        text="\u26a0  No models pulled yet — pull at least one below",
+                        text_color=COLORS["accent_orange"],
+                    )
+            self.after(0, _update)
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _pull_model(self):
+        """Pull (download) the selected model from Ollama."""
+        # Use custom entry if filled, otherwise dropdown
+        custom = self.custom_model_entry.get().strip()
+        model_name = custom if custom else self.pull_model_menu.get()
+        if not model_name:
+            self.status.set_error("No model selected")
+            return
+
+        self.btn_pull.configure(state="disabled", text="\u23f3  Pulling...")
+        self.status.set_working(f"Pulling {model_name}...")
+        self.prog_pull.start_indeterminate(f"Downloading {model_name}\u2026")
+        self._log(f"\n--- Pulling model: {model_name} ---\n")
+
+        def _do():
+            try:
+                r = subprocess.run(
+                    ["ollama", "pull", model_name],
+                    capture_output=True, text=True, timeout=1800,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                out = (r.stdout or "") + (r.stderr or "")
+                if len(out) > 2000:
+                    out = out[:400] + "\n... (trimmed) ...\n" + out[-1000:]
+                self.after(0, lambda: self._log(out))
+                success = r.returncode == 0
+            except subprocess.TimeoutExpired:
+                self.after(0, lambda: self._log("\u23f1  Timed out (30 min limit)\n"))
+                success = False
+            except FileNotFoundError:
+                self.after(0, lambda: self._log(
+                    "\u274c  'ollama' command not found — install Ollama first\n"
+                ))
+                success = False
+            except Exception as e:
+                self.after(0, lambda: self._log(f"Error: {e}\n"))
+                success = False
+
+            def _finish():
+                self.btn_pull.configure(state="normal", text="\u2b07  Pull Model")
+                if success:
+                    self.prog_pull.stop(f"{model_name} pulled \u2713")
+                    self._log(f"\u2705  {model_name} ready!\n")
+                    self.status.set_success(f"Model {model_name} pulled successfully!")
+                    self._refresh_pulled_models()
+                else:
+                    self.prog_pull.set_progress(1.0, "Pull failed")
+                    self.prog_pull.bar.configure(progress_color=COLORS["error"])
+                    self.status.set_error(f"Failed to pull {model_name} — check log")
+            self.after(0, _finish)
+
+        threading.Thread(target=_do, daemon=True).start()
 
     # ==========================================================
     #  Toolkit Log Viewer
