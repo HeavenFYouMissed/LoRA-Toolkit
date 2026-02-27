@@ -176,6 +176,7 @@ def clean_text(
     api_url: str = DEFAULT_API_URL,
     attempt: int = 1,
     custom_instruction: str = "",
+    on_token=None,
 ) -> dict:
     """
     Clean *raw_text* via Ollama.
@@ -213,7 +214,7 @@ def clean_text(
 
     # Call Ollama HTTP API (no pip dependency required)
     try:
-        cleaned = _ollama_generate(prompt, model, api_url)
+        cleaned = _ollama_generate(prompt, model, api_url, on_token=on_token)
     except ConnectionError as e:
         return {
             "success": False,
@@ -282,6 +283,30 @@ def is_ollama_running(api_url: str = DEFAULT_API_URL) -> bool:
         return False
 
 
+def preload_model(model: str = DEFAULT_MODEL, api_url: str = DEFAULT_API_URL):
+    """Load the model into VRAM without generating text.
+
+    Avoids the 5-20 s cold-start delay on the first real request.
+    Also sets keep_alive=30m so the model stays warm between entries.
+    Silently ignores errors — this is purely a warm-up hint.
+    """
+    try:
+        url = f"{api_url.rstrip('/')}/api/generate"
+        payload = json.dumps({
+            "model": model,
+            "prompt": "",
+            "stream": False,
+            "keep_alive": "30m",
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=payload, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=30)
+    except Exception:
+        pass
+
+
 def chat(
     messages: list[dict],
     model: str = DEFAULT_MODEL,
@@ -302,6 +327,7 @@ def chat(
         "model": model,
         "messages": messages,
         "stream": False,
+        "keep_alive": "30m",
         "options": {
             "temperature": 0.7,
             "top_p": 0.9,
@@ -331,8 +357,13 @@ def _ollama_generate(
     model: str,
     api_url: str,
     max_tokens: int | None = None,
+    on_token=None,
 ) -> str:
-    """Raw HTTP call to Ollama /api/generate (streaming disabled).
+    """Raw HTTP call to Ollama /api/generate.
+
+    When *on_token* is provided, streams tokens one-by-one via the
+    callback so the UI can display text as it arrives.  Otherwise
+    waits for the full response (simpler but feels slower).
 
     *max_tokens* caps the response length.  When ``None`` the default
     (dynamic, based on input word count) is used — this avoids the
@@ -347,10 +378,12 @@ def _ollama_generate(
         input_words = len(prompt.split())
         max_tokens = min(4096, max(512, int(input_words * 1.2)))
 
+    stream = on_token is not None
     payload = json.dumps({
         "model": model,
         "prompt": prompt,
-        "stream": False,
+        "stream": stream,
+        "keep_alive": "30m",
         "options": {
             "temperature": 0.3,
             "top_p": 0.9,
@@ -365,7 +398,25 @@ def _ollama_generate(
 
     try:
         with urllib.request.urlopen(req, timeout=180) as resp:
-            data = json.loads(resp.read().decode())
-        return data.get("response", "").strip()
+            if not stream:
+                data = json.loads(resp.read().decode())
+                return data.get("response", "").strip()
+            # Streaming mode — read NDJSON line by line
+            chunks = []
+            for raw_line in resp:
+                line = raw_line.decode("utf-8").strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                token = obj.get("response", "")
+                if token:
+                    chunks.append(token)
+                    on_token(token)
+                if obj.get("done", False):
+                    break
+            return "".join(chunks).strip()
     except urllib.error.URLError as e:
         raise ConnectionError(str(e)) from e

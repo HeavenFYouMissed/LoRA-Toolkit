@@ -1,6 +1,6 @@
 # LoRA-Toolkit
 
-**All-in-one local GUI for building high-quality LoRA models** — scrape data, organize it, clean/tag/preview, train with Unsloth (GPU or CPU fallback), merge models, and export ready-to-use LoRAs or Ollama Modelfiles.
+**All-in-one local GUI for building high-quality LoRA models** — scrape data, organize it, AI-clean with local Ollama, train with Unsloth (GPU or CPU fallback), merge models, and export ready-to-use LoRAs or Ollama Modelfiles.
 
 No cloud, no complicated setup, no stitching 5 tools together.
 
@@ -23,7 +23,7 @@ Most LoRA tools are either:
 - **Cloud/paywalled** — slow, expensive, censored
 - **pain-in-the-ass** — might as well get a degree in a specialty. This solves the headaches and nightmares for AI training and data collection.
 
-This is a **single local app** that does the full workflow: collect dirty web/YouTube/forum data -> clean/score/organize -> export formats -> train LoRA (fast Unsloth or CPU context injection) -> merge models -> deploy to Ollama.
+This is a **single local app** that does the full workflow: collect dirty web/YouTube/forum data -> AI-clean & organize -> export formats -> train LoRA (fast Unsloth or CPU context injection) -> merge models -> deploy to Ollama.
 
 Built for people who want quick, private, offline custom models (characters, art styles, anticheat research, game mods, etc.). I built this for myself because I was tired of the BS, and figured I would make it more complete so others could use it.
 
@@ -62,6 +62,40 @@ I hope it helps the newbies to data and training. It's honestly a pain in the \*
 <img width="700" alt="Import Files" src="https://github.com/user-attachments/assets/d427be68-1bf9-41fc-863e-fd7ed5a6f162" />
 
 </details>
+
+### AI Cleaner (Ollama-Powered)
+Clean & polish your training data with local AI — no cloud, no API keys.
+- Side-by-side diff review (original vs cleaned) with color-coded changes
+- **Live streaming** — see AI output token-by-token as it generates
+- Content-type-aware prompts (code, forum, technical, transcript, general)
+- Batch mode: processes selected entries one-by-one with Keep / Skip / Regenerate / Edit
+- Green ● / gray ○ indicators show which entries have been cleaned
+- Dynamic token budget — fast cleaning even with 7B+ models
+- Supports uncensored models (Dolphin series) for sensitive topics
+
+<!-- 📸 ADD SCREENSHOT: AI Cleaner page showing side-by-side diff review with streaming -->
+<img width="700" alt="AI Cleaner" src="" />
+
+### AI Chat
+Chat with your local Ollama models directly in the app.
+- Model selector + system prompt customization
+- Styled chat bubbles (user / assistant / system)
+- Conversation history + export to .txt
+- Multi-turn conversations via Ollama `/api/chat`
+
+<!-- 📸 ADD SCREENSHOT: AI Chat page showing a conversation -->
+<img width="700" alt="AI Chat" src="" />
+
+### Ollama Integration (Setup Page)
+Built-in Ollama management — no terminal needed.
+- One-click Ollama download & silent install
+- Start Ollama directly from the app
+- Pull models from a curated list: fast, balanced, uncensored 🔓, code-focused
+- 14 recommended models with VRAM requirements
+- Model preloading — keeps model warm in VRAM for instant cleaning
+
+<!-- 📸 ADD SCREENSHOT: Setup page Ollama section with model pull dropdown -->
+<img width="700" alt="Ollama Setup" src="" />
 
 ### Smart Data Management
 - SQLite database + quality auto-scoring (0-100)
@@ -125,7 +159,7 @@ python main.py
 
 ### 3. Use
 ```
-Scrape/collect data -> Library -> Export -> Train -> Merge -> Done
+Scrape/collect data -> Library -> AI Clean -> Export -> Train -> Merge -> Done
 ```
 
 ### Manual install (if you prefer)
@@ -159,7 +193,8 @@ pip install peft transformers trl datasets accelerate bitsandbytes sentencepiece
 
 1. **Collect data** using any of the 7 sources
 2. **Review** in the Data Library — edit, score, remove low-quality entries
-3. **Export** as Alpaca JSONL format
+3. **AI Clean** — run entries through the AI Cleaner to polish formatting, remove noise, fix grammar
+4. **Export** as Alpaca JSONL format
 4. Go to **Train Model** page
 5. **Select your Ollama model** (e.g. `huihui_ai/qwen3-abliterated:14b`)
 6. App auto-resolves to the correct HuggingFace repo (prefers abliterated variants!)
@@ -208,7 +243,8 @@ LoRA-Toolkit/
 ├── setup.bat               # Windows setup script
 │
 ├── core/                   # Backend logic
-│   ├── database.py         # SQLite CRUD
+│   ├── database.py         # SQLite CRUD + cleaned_at tracking
+│   ├── ai_cleaner.py       # Ollama AI cleaning + chat backend
 │   ├── scraper.py          # Web scraping (trafilatura + BS4)
 │   ├── github_scraper.py   # GitHub-specific scraper
 │   ├── youtube.py          # YouTube transcript extraction
@@ -226,7 +262,7 @@ LoRA-Toolkit/
 │   ├── app.py              # Main window + sidebar navigation
 │   ├── theme.py            # OLED dark theme colors/fonts
 │   ├── widgets.py          # Reusable widgets (Tooltip, StatusBar, etc.)
-│   └── pages/              # 14 page views
+│   └── pages/              # 16 page views
 │       ├── scraper_page.py
 │       ├── bulk_scraper_page.py
 │       ├── site_crawler_page.py
@@ -235,10 +271,12 @@ LoRA-Toolkit/
 │       ├── ocr_page.py
 │       ├── import_page.py
 │       ├── library_page.py
+│       ├── cleaner_page.py     # AI Cleaner — side-by-side diff review
+│       ├── chat_page.py        # AI Chat with Ollama models
 │       ├── export_page.py
 │       ├── training_page.py    # LoRA training + HF auto-resolution
 │       ├── merge_page.py       # Model merging
-│       ├── setup_page.py       # GPU detection + step-by-step installer
+│       ├── setup_page.py       # GPU detection + installer + Ollama mgmt
 │       └── settings_page.py
 │
 └── data/                   # Runtime data (gitignored)
@@ -256,6 +294,7 @@ LoRA-Toolkit/
 - **trafilatura** + **BeautifulSoup4** — Web scraping
 - **youtube-transcript-api** — YouTube transcripts
 - **Tesseract OCR** — Screenshot text extraction
+- **Ollama** — Local AI for cleaning + chat (pure HTTP, no pip dep)
 - **Unsloth** — Fast LoRA fine-tuning
 - **mergekit** — Model merging
 - **pystray** — System tray

@@ -16,7 +16,7 @@ from gui.widgets import (
 from core.database import get_all_entries, get_entry, update_entry, mark_cleaned
 from core.ai_cleaner import (
     clean_text, detect_content_type, list_models,
-    is_ollama_running, DEFAULT_MODEL, DEFAULT_API_URL,
+    is_ollama_running, preload_model, DEFAULT_MODEL, DEFAULT_API_URL,
 )
 
 
@@ -372,6 +372,11 @@ class CleanerPage(ctk.CTkFrame):
                 current = self.model_menu.get()
                 if current not in models:
                     self.model_menu.set(models[0])
+            # Preload selected model into VRAM so first clean is instant
+            threading.Thread(
+                target=lambda: preload_model(self.model_menu.get()),
+                daemon=True,
+            ).start()
         else:
             self.conn_dot.configure(text_color=COLORS["error"])
             self.conn_label.configure(
@@ -580,14 +585,43 @@ class CleanerPage(ctk.CTkFrame):
         self._run_clean(entry)
 
     def _run_clean(self, entry):
-        """Run the cleaning in a worker thread and show results."""
+        """Run the cleaning in a worker thread, streaming tokens live."""
         self.status.set_working(f"AI cleaning: {entry['title'][:50]}...")
         self._set_decision_buttons("disabled")
+
+        # ── Show original immediately in left pane ──
+        self.orig_text.configure(state="normal")
+        self.orig_text.delete("1.0", "end")
+        self.orig_text.insert("1.0", entry["content"])
+        self.orig_text.configure(state="disabled")
+        ow = len(entry["content"].split())
+        self.orig_word_label.configure(text=f"{ow:,} words")
+
+        # ── Clear right pane — tokens will stream in ──
+        self.clean_text.delete("1.0", "end")
+        self.clean_text.insert("1.0", "⏳  Waiting for AI response...")
+        self.clean_word_label.configure(text="streaming...")
+
+        title_short = entry["title"][:60]
+        self.review_info.configure(
+            text=f"Cleaning: #{entry['id']}  •  {title_short}  •  streaming..."
+        )
+        self.attempt_label.configure(text=f"Attempt {self._attempt}")
 
         model = self.model_menu.get()
         ctype = self.type_menu.get()
         custom = self.custom_instr.get().strip()
         attempt = self._attempt
+        self._first_token = True
+
+        def on_token(text):
+            """Push each token to the UI as it arrives from Ollama."""
+            def _append(t=text):
+                if self._first_token:
+                    self._first_token = False
+                    self.clean_text.delete("1.0", "end")
+                self.clean_text.insert("end", t)
+            self.after(0, _append)
 
         def worker():
             result = clean_text(
@@ -596,14 +630,14 @@ class CleanerPage(ctk.CTkFrame):
                 model=model,
                 attempt=attempt,
                 custom_instruction=custom,
+                on_token=on_token,
             )
-            self.after(0, lambda: self._show_result(entry, result))
+            self.after(0, lambda: self._finalize_result(entry, result))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _show_result(self, entry, result):
-        """Display original vs cleaned in the review panes with diff highlighting."""
-        # Update info bar
+    def _finalize_result(self, entry, result):
+        """Finalize after streaming — update stats, diff coloring, enable buttons."""
         ctype = result.get("content_type", "general")
         stats = result.get("stats", {})
         reduction = stats.get("reduction_pct", 0)
@@ -614,33 +648,25 @@ class CleanerPage(ctk.CTkFrame):
                  f"type: {ctype}  •  {reduction:+.1f}% words  •  {result.get('explanation', '')}"
         )
 
-        # Original pane (read-only)
-        self.orig_text.configure(state="normal")
-        self.orig_text.delete("1.0", "end")
-        self.orig_text.insert("1.0", entry["content"])
-        self.orig_text.configure(state="disabled")
-        ow = len(entry["content"].split())
-        self.orig_word_label.configure(text=f"{ow:,} words")
-
-        # Cleaned pane (editable) with diff highlighting
         cleaned = result.get("cleaned", "")
-        self.clean_text.delete("1.0", "end")
-        self.clean_text.insert("1.0", cleaned)
+        if not result["success"]:
+            # Error — streaming may have partial content, replace with fallback
+            self.clean_text.delete("1.0", "end")
+            self.clean_text.insert("1.0", cleaned)
+
         cw = len(cleaned.split())
         self.clean_word_label.configure(text=f"{cw:,} words")
 
-        # Apply diff coloring
+        # Diff coloring (applies tags on top of existing streamed text)
         self._apply_diff_colors(entry["content"], cleaned)
 
-        # Attempt label
         self.attempt_label.configure(text=f"Attempt {self._attempt}")
 
         if result["success"]:
             self.status.set_success(result["explanation"])
-            self._set_decision_buttons("normal")
         else:
             self.status.set_error(result["explanation"])
-            self._set_decision_buttons("normal")
+        self._set_decision_buttons("normal")
 
     def _apply_diff_colors(self, original: str, cleaned: str):
         """Highlight differences between original and cleaned text with colors.
