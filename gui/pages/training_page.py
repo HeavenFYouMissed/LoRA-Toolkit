@@ -960,6 +960,29 @@ class TrainingPage(ctk.CTkFrame):
 
     # ── LoRA Training Script (real training) ─────────────
 
+    def _auto_export_training_data(self):
+        """Auto-export library data as Alpaca JSONL for training.
+
+        Returns (path, sample_count) or (None, 0) on failure.
+        """
+        from core.exporter import export_alpaca
+        from core.database import get_all_entries as _get_entries
+
+        entries = _get_entries()
+        if not entries:
+            return None, 0
+
+        data_file = os.path.join(EXPORTS_DIR, "training_data.jsonl")
+        try:
+            path, count = export_alpaca(
+                entries, output_path=data_file,
+                instruction_template="default",
+                chunk_size=512,
+            )
+            return path, count
+        except Exception:
+            return None, 0
+
     def _generate_lora_script(self):
         """Generate a full Unsloth LoRA training script."""
         model_id = self._get_training_model_id()
@@ -986,7 +1009,11 @@ class TrainingPage(ctk.CTkFrame):
             self.status.set_error("No data in library — collect some data first!")
             return
 
-        data_file = os.path.join(EXPORTS_DIR, "training_data.jsonl")
+        # Auto-export training data from library
+        data_file, sample_count = self._auto_export_training_data()
+        if not data_file or sample_count == 0:
+            self.status.set_error("Export failed — check your library has data.")
+            return
         adapter_dir = os.path.join(DATA_DIR, "lora_adapter")
         gguf_dir = os.path.join(DATA_DIR, f"{model_name}_gguf")
         modelfile_path = os.path.join(DATA_DIR, "Modelfile")
@@ -1162,8 +1189,8 @@ class TrainingPage(ctk.CTkFrame):
             f"# Saved:  {script_path}\n"
             f"#\n"
             f"# Steps:\n"
-            f"#   1. Export your data → Alpaca format → save as"
-            f" 'training_data.jsonl'\n"
+            f"#   1. ✅ Data auto-exported ({sample_count} samples"
+            f" → training_data.jsonl)\n"
             f"#   2. Click Launch  (or: python \"{script_path}\")\n"
             f"#   3. After training: ollama create {model_name} -f Modelfile\n"
             f"#   4. ollama run {model_name}\n"
@@ -1173,7 +1200,10 @@ class TrainingPage(ctk.CTkFrame):
         )
 
         self.output.set_text(preview)
-        self.status.set_success("Training script saved — export data then click Launch!")
+        self.status.set_success(
+            f"Training script saved — {sample_count} samples exported"
+            f" → click Launch!"
+        )
 
     def _estimate_download(self, model_id):
         """Rough download-size estimate for display purposes."""
@@ -1253,10 +1283,13 @@ class TrainingPage(ctk.CTkFrame):
 
         data_path = os.path.join(EXPORTS_DIR, "training_data.jsonl")
         if not os.path.exists(data_path):
-            self.status.set_error(
-                "Export data first!  Export → Alpaca format → 'training_data.jsonl'",
-            )
-            return
+            # Auto-export before launching
+            data_path, count = self._auto_export_training_data()
+            if not data_path or count == 0:
+                self.status.set_error(
+                    "No data to train on — collect some data first!"
+                )
+                return
 
         self.status.set_working("Launching training in new console…")
 
