@@ -1448,13 +1448,15 @@ class TrainingPage(ctk.CTkFrame):
 
         def _do():
             try:
-                # Build the full command as a single string for cmd /K.
-                # Using a string (not list) avoids subprocess double-quoting
-                # the path, which makes cmd choke on it.
+                # Build command as a plain ASCII string for cmd.exe.
+                # cmd chokes on non-ASCII (em-dashes etc.) in the line,
+                # so keep everything plain.
                 cmd_line = (
                     f'"{venv_python}" "{script_path}" & '
                     f'if errorlevel 1 ('
-                    f'echo. & echo [ERROR] Training crashed — see above. & pause'
+                    f'echo. & echo [ERROR] Training crashed -- see above. & pause'
+                    f') else ('
+                    f'echo. & echo Training finished. & pause'
                     f')'
                 )
                 subprocess.Popen(
