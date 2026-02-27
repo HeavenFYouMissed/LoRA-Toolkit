@@ -830,6 +830,23 @@ class CleanerPage(ctk.CTkFrame):
                 self._flush_pending = True
                 self.after(50, _flush_tokens)
 
+        def on_chunk_start(chunk_idx, total_chunks):
+            """Called before each chunk starts processing."""
+            if self._cancel_requested:
+                return
+            label = f"Processing chunk {chunk_idx}/{total_chunks}..."
+            self.after(0, lambda: self.clean_word_label.configure(
+                text=label))
+            self.after(0, lambda: self.status.set_working(
+                f"AI cleaning: chunk {chunk_idx}/{total_chunks} — "
+                f"{entry['title'][:40]}..."))
+            # Add a visual separator between chunks in the streaming output
+            if chunk_idx > 1:
+                self._token_buffer.append(f"\n\n{'─' * 40}\n[Chunk {chunk_idx}/{total_chunks}]\n\n")
+                if not self._flush_pending:
+                    self._flush_pending = True
+                    self.after(50, _flush_tokens)
+
         def worker():
             result = clean_text(
                 raw_text=entry["content"],
@@ -843,6 +860,7 @@ class CleanerPage(ctk.CTkFrame):
                 groq_model=groq_model,
                 grok_api_key=grok_key,
                 grok_model=grok_model,
+                on_chunk_start=on_chunk_start,
             )
             if not self._cancel_requested:
                 # Final flush of any remaining buffered tokens
@@ -856,11 +874,14 @@ class CleanerPage(ctk.CTkFrame):
         ctype = result.get("content_type", "general")
         stats = result.get("stats", {})
         reduction = stats.get("reduction_pct", 0)
+        n_chunks = stats.get("chunks_processed", 1)
+        chunk_note = f"  •  {n_chunks} chunks" if n_chunks > 1 else ""
         idx = self._queue_idx + 1
         total = len(self._queue) if self._queue else 1
         self.review_info.configure(
             text=f"[{idx}/{total}]  #{entry['id']}  •  {entry['title'][:60]}  •  "
-                 f"type: {ctype}  •  {reduction:+.1f}% words  •  {result.get('explanation', '')}"
+                 f"type: {ctype}{chunk_note}  •  {reduction:+.1f}% words  •  "
+                 f"{result.get('explanation', '')}"
         )
 
         cleaned = result.get("cleaned", "")

@@ -9,8 +9,12 @@ Supports multiple content types with specialised prompts:
   • transcript — YouTube transcripts, audio dumps
 
 Each "regenerate" bumps the attempt counter to produce a stricter prompt.
+
+Large documents (200K+ words) are automatically split into intelligent
+chunks, processed separately, and stitched back together.
 """
 import json
+import re
 import urllib.request
 import urllib.error
 
@@ -18,7 +22,13 @@ import urllib.error
 
 DEFAULT_MODEL = "qwen3-vl:4b-instruct"
 DEFAULT_API_URL = "http://localhost:11434"
-MAX_INPUT_CHARS = 24_000  # truncate monster files (increased for cloud models)
+
+# Chunk sizing — how many chars per AI call.
+# ~8000 words per chunk = fits most context windows
+# while keeping chapters intact for the AI.
+CHUNK_TARGET_CHARS = 48_000    # ideal chunk size
+CHUNK_MAX_CHARS    = 64_000    # hard cap per chunk
+SMALL_DOC_CHARS    = 52_000    # docs under this: send in one shot
 
 # ─── Groq Cloud ────────────────────────────────────────────────────
 
@@ -175,6 +185,127 @@ Be more aggressive and detailed:
 """
 
 
+# ─── Smart Document Chunking ───────────────────────────────────────
+
+def _split_into_chunks(text: str, target_chars: int = CHUNK_TARGET_CHARS,
+                       max_chars: int = CHUNK_MAX_CHARS) -> list[str]:
+    """Split a large document into intelligent chunks.
+
+    Strategy:
+    1. Try to split on chapter / section boundaries first
+    2. Fall back to paragraph boundaries
+    3. Last resort: split on sentences
+
+    Each chunk is self-contained and under *max_chars*.
+    """
+    if len(text) <= max_chars:
+        return [text]
+
+    # ── 1. Try chapter/section boundaries ──
+    # Look for lines like "Chapter 1", "CHAPTER ONE", "## Section",
+    # "Part II", numbered headings "1.", "1.1", or all-caps headings.
+    # NOTE: IGNORECASE is needed for "chapter/CHAPTER" etc., but the
+    #       all-caps heading alternative uses (?-i:…) to stay case-
+    #       sensitive so it doesn't match normal prose.
+    chapter_pattern = re.compile(
+        r'^(?:'
+        r'(?:chapter|part|section|module|unit|lesson)\s+[\dIVXLCDMivxlcdm]+'
+        r'|#{1,4}\s+\S'
+        r'|\d+(?:\.\d+)*\s+[A-Z]'
+        r'|(?-i:[A-Z][A-Z\s]{10,})'
+        r')',
+        re.MULTILINE | re.IGNORECASE,
+    )
+    # Find all chapter-start positions
+    splits = [m.start() for m in chapter_pattern.finditer(text)]
+    if splits:
+        chunks = _merge_splits(text, splits, target_chars, max_chars)
+        if len(chunks) > 1:
+            return chunks
+
+    # ── 2. Split on double-newline (paragraph boundaries) ──
+    para_splits = [m.start() for m in re.finditer(r'\n\s*\n', text)]
+    if para_splits:
+        chunks = _merge_splits(text, para_splits, target_chars, max_chars)
+        if len(chunks) > 1:
+            return chunks
+
+    # ── 3. Hard split by character count at sentence boundaries ──
+    return _hard_split(text, target_chars, max_chars)
+
+
+def _merge_splits(text: str, split_positions: list[int],
+                  target: int, maximum: int) -> list[str]:
+    """Merge split positions into chunks that respect size limits.
+
+    Accumulates consecutive sections.  Before adding a new section
+    that would push the buffer past *target*, the current buffer is
+    flushed first — so chapter headings stay with their content.
+    Any flush that still exceeds *maximum* is hard-split at sentence
+    boundaries.
+    """
+    positions = sorted(set([0] + list(split_positions) + [len(text)]))
+    chunks: list[str] = []
+    buf_start = 0
+
+    for i in range(1, len(positions)):
+        pos = positions[i]
+
+        # Would the buffer exceed target after including this section?
+        if pos - buf_start > target and positions[i - 1] > buf_start:
+            # Flush everything before this section
+            piece = text[buf_start:positions[i - 1]].strip()
+            if piece:
+                if len(piece) > maximum:
+                    chunks.extend(_hard_split(piece, target, maximum))
+                else:
+                    chunks.append(piece)
+            buf_start = positions[i - 1]
+
+        # If a single section alone exceeds maximum, hard-split it now
+        if pos - buf_start > maximum:
+            piece = text[buf_start:pos].strip()
+            if piece:
+                chunks.extend(_hard_split(piece, target, maximum))
+            buf_start = pos
+
+    # Flush remainder
+    remainder = text[buf_start:].strip()
+    if remainder:
+        if chunks and len(chunks[-1]) + 1 + len(remainder) <= target:
+            chunks[-1] += "\n\n" + remainder
+        else:
+            if len(remainder) > maximum:
+                chunks.extend(_hard_split(remainder, target, maximum))
+            else:
+                chunks.append(remainder)
+
+    return chunks if len(chunks) > 1 else [text]
+
+
+def _hard_split(text: str, target: int, maximum: int) -> list[str]:
+    """Split text at sentence boundaries to stay under *maximum* chars."""
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + target, len(text))
+        if end < len(text):
+            # Try to break at a sentence boundary (. ! ? followed by space/newline)
+            search_from = max(start + target // 2, start)
+            best = end
+            for pat in ['. ', '.\n', '? ', '!\n', '! ', '?\n', '\n\n', '\n']:
+                idx = text.rfind(pat, search_from, end + 500)
+                if idx > search_from:
+                    best = idx + len(pat)
+                    break
+            end = best
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start = end
+    return chunks if chunks else [text]
+
+
 # ─── Public API ────────────────────────────────────────────────────
 
 def detect_content_type(text: str) -> str:
@@ -232,9 +363,16 @@ def clean_text(
     groq_model: str = GROQ_DEFAULT_MODEL,
     grok_api_key: str = "",
     grok_model: str = GROK_DEFAULT_MODEL,
+    on_chunk_start=None,
 ) -> dict:
     """
-    Clean *raw_text* via Ollama (local) or Groq (cloud).
+    Clean *raw_text* via Ollama (local), Groq (cloud), or xAI Grok.
+
+    Large documents are automatically split into chunks, each processed
+    separately, and the results are concatenated.
+
+    *on_chunk_start*: optional callback ``fn(chunk_idx, total_chunks)``
+                      called before each chunk starts processing.
 
     Returns dict:
         success: bool
@@ -256,68 +394,102 @@ def clean_text(
     if content_type == "auto":
         content_type = detect_content_type(raw_text)
 
-    # Build the prompt
-    template = _PROMPTS.get(content_type, _PROMPTS["general"])
-    truncated = raw_text[:MAX_INPUT_CHARS]
-    prompt = template.format(base=_BASE_RULES, text=truncated)
+    # ── Split large documents into chunks ──
+    if len(raw_text) <= SMALL_DOC_CHARS:
+        chunks = [raw_text]
+    else:
+        chunks = _split_into_chunks(raw_text, CHUNK_TARGET_CHARS, CHUNK_MAX_CHARS)
 
-    if custom_instruction:
-        prompt += f"\n\nAdditional instruction: {custom_instruction}\n"
+    # ── Process each chunk ──
+    all_cleaned = []
+    any_error = None
+    total = len(chunks)
 
-    if attempt > 1:
-        prompt += _STRICT_SUFFIX.format(attempt=attempt)
+    for i, chunk in enumerate(chunks):
+        if on_chunk_start and total > 1:
+            on_chunk_start(i + 1, total)
 
-    # Call AI backend (Ollama local, Groq cloud, or xAI Grok)
-    try:
-        if provider == "grok" and grok_api_key:
-            cleaned = grok_generate(
-                prompt, model=grok_model, api_key=grok_api_key, on_token=on_token,
+        # Build chunk prompt — add context header for multi-chunk docs
+        template = _PROMPTS.get(content_type, _PROMPTS["general"])
+        prompt = template.format(base=_BASE_RULES, text=chunk)
+
+        if total > 1:
+            prompt += (
+                f"\n\n[NOTE: This is section {i+1} of {total} from a large document. "
+                f"Extract ALL useful knowledge from THIS section. "
+                f"Do not add introductions or conclusions — just the notes.]\n"
             )
-        elif provider == "groq" and groq_api_key:
-            cleaned = groq_generate(
-                prompt, model=groq_model, api_key=groq_api_key, on_token=on_token,
-            )
-        else:
-            cleaned = _ollama_generate(prompt, model, api_url, on_token=on_token)
-    except ConnectionError as e:
+
+        if custom_instruction:
+            prompt += f"\n\nAdditional instruction: {custom_instruction}\n"
+
+        if attempt > 1:
+            prompt += _STRICT_SUFFIX.format(attempt=attempt)
+
+        # ── Call AI backend ──
+        try:
+            if provider == "grok" and grok_api_key:
+                cleaned = grok_generate(
+                    prompt, model=grok_model, api_key=grok_api_key,
+                    on_token=on_token,
+                )
+            elif provider == "groq" and groq_api_key:
+                cleaned = groq_generate(
+                    prompt, model=groq_model, api_key=groq_api_key,
+                    on_token=on_token,
+                )
+            else:
+                cleaned = _ollama_generate(
+                    prompt, model, api_url, on_token=on_token,
+                )
+            all_cleaned.append(cleaned)
+        except ConnectionError as e:
+            any_error = f"Cannot reach AI backend — {e}"
+            break
+        except Exception as e:
+            any_error = f"AI error on chunk {i+1}/{total}: {e}"
+            break
+
+    if any_error:
         return {
             "success": False,
             "cleaned": raw_text,
-            "explanation": f"Cannot reach Ollama at {api_url} — is it running?\n{e}",
+            "explanation": any_error,
             "content_type": content_type,
             "stats": {},
         }
-    except Exception as e:
-        return {
-            "success": False,
-            "cleaned": raw_text,
-            "explanation": f"AI error: {e}",
-            "content_type": content_type,
-            "stats": {},
-        }
+
+    # ── Stitch chunks back together ──
+    if total > 1:
+        # Add a separator between chunk outputs for readability
+        full_cleaned = "\n\n".join(all_cleaned)
+    else:
+        full_cleaned = all_cleaned[0] if all_cleaned else ""
 
     # Stats
     orig_words = len(raw_text.split())
-    clean_words = len(cleaned.split())
+    clean_words = len(full_cleaned.split())
     stats = {
         "original_chars": len(raw_text),
-        "cleaned_chars": len(cleaned),
+        "cleaned_chars": len(full_cleaned),
         "original_words": orig_words,
         "cleaned_words": clean_words,
         "reduction_pct": round(
             (1 - clean_words / max(orig_words, 1)) * 100, 1
         ),
+        "chunks_processed": total,
     }
 
+    chunk_note = f" ({total} chunks)" if total > 1 else ""
     explanation = (
-        f"Attempt {attempt} • {content_type} mode • "
+        f"Attempt {attempt} • {content_type} mode{chunk_note} • "
         f"{stats['original_words']:,} → {stats['cleaned_words']:,} words "
         f"({stats['reduction_pct']:+.1f}%)"
     )
 
     return {
         "success": True,
-        "cleaned": cleaned,
+        "cleaned": full_cleaned,
         "explanation": explanation,
         "content_type": content_type,
         "stats": stats,
@@ -523,11 +695,11 @@ def _ollama_generate(
     """
     url = f"{api_url.rstrip('/')}/api/generate"
 
-    # Dynamic token budget: output shouldn't exceed input + 20 % headroom,
-    # with a floor of 512 and a ceiling of 4096.
+    # Dynamic token budget: output should be generous for thorough notes.
+    # Floor of 1024, ceiling of 8192, scaled to input size + 50% headroom.
     if max_tokens is None:
         input_words = len(prompt.split())
-        max_tokens = min(4096, max(512, int(input_words * 1.2)))
+        max_tokens = min(8192, max(1024, int(input_words * 1.5)))
 
     stream = on_token is not None
 
@@ -606,7 +778,7 @@ def groq_chat(
         "stream": stream,
         "temperature": 0.7,
         "top_p": 0.9,
-        "max_tokens": 4096,
+        "max_tokens": 16384,
     }).encode("utf-8")
 
     req = urllib.request.Request(
@@ -719,7 +891,7 @@ def grok_chat(
         "stream": stream,
         "temperature": 0.7,
         "top_p": 0.9,
-        "max_tokens": 4096,
+        "max_tokens": 16384,
     }).encode("utf-8")
 
     req = urllib.request.Request(
