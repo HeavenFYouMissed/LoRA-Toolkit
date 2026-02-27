@@ -9,7 +9,9 @@ No cloud, no complicated setup, no stitching 5 tools together.
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![GPU](https://img.shields.io/badge/GPU-Optional-orange?logo=nvidia&logoColor=white)
 
-<img width="3385" height="2024" alt="Screenshot 2026-02-26 231141" src="https://github.com/user-attachments/assets/2415a7c7-286e-4fa4-97bf-d4e22075062c" />
+<p align="center">
+  <img width="800" alt="LoRA Toolkit - Main Window" src="https://github.com/user-attachments/assets/2415a7c7-286e-4fa4-97bf-d4e22075062c" />
+</p>
 
 ---
 
@@ -19,12 +21,13 @@ Most LoRA tools are either:
 - **Training-only** (Kohya_ss, OneTrainer) — no built-in data collection
 - **Scraping-only** — no training or merging
 - **Cloud/paywalled** — slow, expensive, censored
-- **pain-in-azz** - might as well get a degree in a specialty/ need to be inteligent, this solves the headaches and knightmares for ai training and data collection.
-- 
+- **pain-in-the-ass** — might as well get a degree in a specialty. This solves the headaches and nightmares for AI training and data collection.
+
 This is a **single local app** that does the full workflow: collect dirty web/YouTube/forum data -> clean/score/organize -> export formats -> train LoRA (fast Unsloth or CPU context injection) -> merge models -> deploy to Ollama.
 
-Built for people who want quick, private, offline custom models (characters, art styles, anticheat research, game mods, etc.). I built this for myself because i was tired of the bs, and figured i would make it more complete so others could use it. 
-i hope it helps the newbies to data and training. its honestly a pain in the ****. i hope this helps/ or makes your life easyer. i like to see the data, and give clean data to the models instead of just random whatever.
+Built for people who want quick, private, offline custom models (characters, art styles, anticheat research, game mods, etc.). I built this for myself because I was tired of the BS, and figured I would make it more complete so others could use it.
+
+I hope it helps the newbies to data and training. It's honestly a pain in the \*\*\*\*. I hope this helps or makes your life easier. I like to see the data, and give clean data to the models instead of just random whatever.
 
 ---
 
@@ -41,12 +44,24 @@ i hope it helps the newbies to data and training. its honestly a pain in the ***
 | Paste Text | Manually paste text, notes, documentation |
 | Screenshot OCR | Extract text from images (Tesseract) |
 | File Import | Drag-and-drop PDF, TXT, MD, HTML, JSON, CSV, code |
-<img width="2512" height="1190" alt="Screenshot 2026-02-26 232147" src="https://github.com/user-attachments/assets/362acfdf-3b2d-4bb2-8867-505a699b5a37" />
-<img width="2490" height="1274" alt="Screenshot 2026-02-26 232216" src="https://github.com/user-attachments/assets/6fa3c6f5-946d-4043-b1bd-325493cad581" />
-<img width="2493" height="1311" alt="Screenshot 2026-02-26 232309" src="https://github.com/user-attachments/assets/db1e0773-b56d-4774-9619-504526cc64d4" />
-<img width="2507" height="1806" alt="Screenshot 2026-02-26 232411" src="https://github.com/user-attachments/assets/a8c04577-9e4e-4d04-91c4-f24dc224b85b" />
-<img width="2519" height="1102" alt="Screenshot 2026-02-26 232451" src="https://github.com/user-attachments/assets/527acd5d-5ba0-4d31-80ca-bc8cf0b9ab39" />
-<img width="2512" height="1307" alt="Screenshot 2026-02-26 232518" src="https://github.com/user-attachments/assets/d427be68-1bf9-41fc-863e-fd7ed5a6f162" />
+
+<details>
+<summary>📸 <b>Data Source Screenshots</b> (click to expand)</summary>
+<br>
+
+<img width="700" alt="Web Scraper" src="https://github.com/user-attachments/assets/362acfdf-3b2d-4bb2-8867-505a699b5a37" />
+
+<img width="700" alt="Bulk Scraper" src="https://github.com/user-attachments/assets/6fa3c6f5-946d-4043-b1bd-325493cad581" />
+
+<img width="700" alt="Site Crawler" src="https://github.com/user-attachments/assets/db1e0773-b56d-4774-9619-504526cc64d4" />
+
+<img width="700" alt="YouTube Transcripts" src="https://github.com/user-attachments/assets/a8c04577-9e4e-4d04-91c4-f24dc224b85b" />
+
+<img width="700" alt="Paste Text" src="https://github.com/user-attachments/assets/527acd5d-5ba0-4d31-80ca-bc8cf0b9ab39" />
+
+<img width="700" alt="Import Files" src="https://github.com/user-attachments/assets/d427be68-1bf9-41fc-863e-fd7ed5a6f162" />
+
+</details>
 
 ### Smart Data Management
 - SQLite database + quality auto-scoring (0-100)
@@ -62,13 +77,15 @@ Alpaca - ShareGPT - Completion - ChatML - Raw JSONL
 - **CPU fallback** (context injection via long-context models)
 - Auto-resolves Ollama names -> Hugging Face repos (prefers uncensored/abliterated variants)
 - VRAM-aware model recommendations
-<img width="2922" height="2007" alt="Screenshot 2026-02-26 231758" src="https://github.com/user-attachments/assets/4ee326a5-f8bc-4b23-8933-8cf8681627c7" />
+
+<img width="700" alt="Training Page" src="https://github.com/user-attachments/assets/4ee326a5-f8bc-4b23-8933-8cf8681627c7" />
 
 ### Model Merging ("Forge")
 - Mergekit integration (SLERP, Linear, TIES, DARE-TIES, Passthrough)
 - Auto YAML config
 - Converts to GGUF + Ollama Modelfile
-<img width="2926" height="2023" alt="Screenshot 2026-02-26 231929" src="https://github.com/user-attachments/assets/6125ab81-9c6f-4f9c-b447-1989e4828744" />
+
+<img width="700" alt="Model Merging Page" src="https://github.com/user-attachments/assets/6125ab81-9c6f-4f9c-b447-1989e4828744" />
 
 ### Beautiful Dark GUI
 - CustomTkinter + Mica titlebar (Windows 11)
@@ -82,12 +99,13 @@ Alpaca - ShareGPT - Completion - ChatML - Raw JSONL
   - **Step 2:** PyTorch + CUDA 12.4 (GPU compute)
   - **Step 3:** Training stack (Unsloth, PEFT, TRL)
 - Smart guards — Step 3 blocks until Step 2 is done, Step 2 warns without NVIDIA GPU
-<img width="2914" height="2103" alt="Screenshot 2026-02-26 232043" src="https://github.com/user-attachments/assets/1cb3d966-06b8-4206-894d-7e976e4b1c9d" />
+
+<img width="700" alt="Setup Page" src="https://github.com/user-attachments/assets/1cb3d966-06b8-4206-894d-7e976e4b1c9d" />
 
 ### Offline & Private
-Everything runs locally. No telemetry, no cloud, no accounts.
-simple settings with basic setting not to overwelm.
-<img width="2493" height="1615" alt="Screenshot 2026-02-26 232604" src="https://github.com/user-attachments/assets/2b18c8eb-68fb-437e-94a0-47a96f6b2f16" />
+Everything runs locally. No telemetry, no cloud, no accounts. Simple settings with basics so it doesn't overwhelm.
+
+<img width="700" alt="Settings Page" src="https://github.com/user-attachments/assets/2b18c8eb-68fb-437e-94a0-47a96f6b2f16" />
 
 ---
 
@@ -134,12 +152,6 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install "unsloth[cu124-torch250] @ git+https://github.com/unslothai/unsloth.git"
 pip install peft transformers trl datasets accelerate bitsandbytes sentencepiece protobuf
 ```
-
----
-
-## Screenshots
-
-*(Add 4-6 images here — main window, scraper page, library, training config, merge result, setup page)*
 
 ---
 
