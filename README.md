@@ -73,8 +73,8 @@ Clean & polish your training data with local AI — no cloud, no API keys.
 - Dynamic token budget — fast cleaning even with 7B+ models
 - Supports uncensored models (Dolphin series) for sensitive topics
 
-<!-- 📸 ADD SCREENSHOT: AI Cleaner page showing side-by-side diff review with streaming -->
-<img width="700" alt="AI Cleaner" src="" />
+<img width="2238" height="1891" alt="Screenshot 2026-02-27 023450" src="https://github.com/user-attachments/assets/c361951f-e490-453a-afab-ee39d8436b61" />
+
 
 ### AI Chat
 Chat with your local Ollama models directly in the app.
