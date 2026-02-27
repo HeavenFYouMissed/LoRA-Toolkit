@@ -28,6 +28,7 @@ lora_adapter/
 *_gguf/
 Modelfile
 train_lora.py
+unsloth_compiled_cache/
 
 # Merge outputs
 merges/
