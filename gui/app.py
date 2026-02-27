@@ -2,8 +2,10 @@
 Main Application Window - Sidebar navigation + page switching.
 """
 import ctypes
+import os
 import customtkinter as ctk
-from config import APP_NAME, WINDOW_WIDTH, WINDOW_HEIGHT, SIDEBAR_WIDTH
+from PIL import Image
+from config import APP_NAME, APP_DIR, WINDOW_WIDTH, WINDOW_HEIGHT, SIDEBAR_WIDTH
 from gui.theme import COLORS, FONT_FAMILY, FONT_SIZES
 from core.database import get_stats
 from core.settings import load_settings
@@ -115,30 +117,38 @@ class App(ctk.CTk):
         sidebar.grid(row=0, column=0, sticky="nsew")
         sidebar.grid_propagate(False)
 
-        # App title
-        title_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        title_frame.pack(fill="x", padx=15, pady=(20, 5))
-
-        ctk.CTkLabel(
-            title_frame,
-            text="🧠 LoRA",
-            font=(FONT_FAMILY, 22, "bold"),
-            text_color=COLORS["accent"],
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            title_frame,
-            text="Data Toolkit",
-            font=(FONT_FAMILY, 14),
-            text_color=COLORS["text_secondary"],
-        ).pack(anchor="w")
+        # App logo
+        logo_path = os.path.join(APP_DIR, "assets", "logo.jpg")
+        if os.path.isfile(logo_path):
+            _logo_size = (SIDEBAR_WIDTH - 20, SIDEBAR_WIDTH - 20)  # square
+            _pil = Image.open(logo_path).resize(_logo_size, Image.LANCZOS)
+            self._logo_img = ctk.CTkImage(
+                light_image=_pil, dark_image=_pil, size=_logo_size,
+            )
+            ctk.CTkLabel(
+                sidebar, image=self._logo_img, text="",
+            ).pack(padx=10, pady=(12, 2))
+        else:
+            # Fallback text logo if image missing
+            title_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+            title_frame.pack(fill="x", padx=15, pady=(20, 5))
+            ctk.CTkLabel(
+                title_frame, text="🧠 LoRA",
+                font=(FONT_FAMILY, 22, "bold"),
+                text_color=COLORS["accent"],
+            ).pack(anchor="w")
+            ctk.CTkLabel(
+                title_frame, text="Data Toolkit",
+                font=(FONT_FAMILY, 14),
+                text_color=COLORS["text_secondary"],
+            ).pack(anchor="w")
 
         # Divider with accent glow
         ctk.CTkFrame(sidebar, height=1, fg_color=COLORS["accent_dim"]).pack(
-            fill="x", padx=15, pady=(15, 4)
+            fill="x", padx=15, pady=(8, 4)
         )
         ctk.CTkFrame(sidebar, height=1, fg_color=COLORS["divider"]).pack(
-            fill="x", padx=20, pady=(0, 10)
+            fill="x", padx=20, pady=(0, 6)
         )
 
         # Section label: COLLECT

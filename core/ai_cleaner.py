@@ -727,6 +727,7 @@ def grok_chat(
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
+            "User-Agent": "LoRA-Toolkit/1.0",
         },
     )
     try:
@@ -795,7 +796,8 @@ def grok_list_models(api_key: str = "") -> list[str]:
         url = f"{GROK_API_URL}/models"
         req = urllib.request.Request(
             url, method="GET",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={"Authorization": f"Bearer {api_key}",
+                     "User-Agent": "LoRA-Toolkit/1.0"},
         )
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode())
@@ -813,7 +815,8 @@ def grok_verify_key(api_key: str) -> dict:
         url = f"{GROK_API_URL}/models"
         req = urllib.request.Request(
             url, method="GET",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={"Authorization": f"Bearer {api_key}",
+                     "User-Agent": "LoRA-Toolkit/1.0"},
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
