@@ -12,6 +12,7 @@ import re
 import json
 import subprocess
 import shutil
+import sys
 import threading
 
 import customtkinter as ctk
@@ -1293,10 +1294,20 @@ class TrainingPage(ctk.CTkFrame):
 
         self.status.set_working("Launching training in new console…")
 
+        # Use the same venv Python that is running this app
+        venv_python = sys.executable
+
         def _do():
             try:
+                # Wrap in cmd /K so the console stays open on error
+                # cmd /K runs the command then keeps the window open
                 subprocess.Popen(
-                    ["python", script_path],
+                    [
+                        "cmd", "/K",
+                        f'"{venv_python}" "{script_path}" & '
+                        f'if errorlevel 1 (echo. & echo '
+                        f'[ERROR] Training crashed — see above. & pause)'
+                    ],
                     creationflags=subprocess.CREATE_NEW_CONSOLE,
                     cwd=DATA_DIR,
                 )

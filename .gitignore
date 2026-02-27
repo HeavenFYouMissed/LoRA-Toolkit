@@ -58,3 +58,4 @@ ehthumbs.db
 # Environment files
 .env
 .env.local
+*.txt
