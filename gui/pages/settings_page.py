@@ -312,6 +312,20 @@ class SettingsPage(ctk.CTkFrame):
         btn_eye.pack(side="left", padx=(6, 0))
         Tooltip(btn_eye, "Show / hide API key")
 
+        btn_groq_load = ActionButton(
+            key_row, text="📂 Load", command=self._load_groq_key,
+            style="secondary", width=70,
+        )
+        btn_groq_load.pack(side="left", padx=(6, 0))
+        Tooltip(btn_groq_load, "Load Groq API key from a .txt or .env file")
+
+        self.btn_groq_verify = ActionButton(
+            key_row, text="✅ Verify", command=self._verify_groq_key,
+            style="secondary", width=80,
+        )
+        self.btn_groq_verify.pack(side="left", padx=(6, 0))
+        Tooltip(self.btn_groq_verify, "Test the Groq API key by listing available models")
+
         # Default cloud model
         gmodel_row = ctk.CTkFrame(groq_frame, fg_color="transparent")
         gmodel_row.pack(fill="x", padx=15, pady=(0, 6))
@@ -375,8 +389,116 @@ class SettingsPage(ctk.CTkFrame):
             hover_color=COLORS["accent_hover"],
             border_color=COLORS["border"],
         )
-        prov_groq.pack(side="left")
+        prov_groq.pack(side="left", padx=(0, 15))
         Tooltip(prov_groq, "Use Groq Cloud by default for all AI features.\n70B+ models, 50-150ms latency.\nRequires API key above.")
+
+        prov_grok = ctk.CTkRadioButton(
+            prov_row, text="🤖  xAI Grok",
+            variable=self.provider_var, value="grok",
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            text_color=COLORS["text_secondary"],
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            border_color=COLORS["border"],
+        )
+        prov_grok.pack(side="left")
+        Tooltip(prov_grok, "Use xAI Grok (Super Grok) by default.\nPowerful reasoning models.\nRequires xAI API key below.")
+
+        # ─── xAI Grok Section ──────────────────────────────
+        self._section_label(container, "🤖  xAI Grok (Super Grok)")
+
+        grok_frame = ctk.CTkFrame(container, fg_color=COLORS["bg_card"], corner_radius=10)
+        grok_frame.pack(fill="x", pady=(0, 15))
+
+        grok_info = ctk.CTkLabel(
+            grok_frame,
+            text="🧠  Connect to xAI Grok for powerful reasoning models.\n"
+                 "   Requires Super Grok subscription — get keys at console.x.ai",
+            font=(FONT_FAMILY, FONT_SIZES["small"]),
+            text_color=COLORS["text_muted"],
+            justify="left",
+        )
+        grok_info.pack(anchor="w", padx=15, pady=(12, 8))
+
+        # Grok API Key
+        grok_key_row = ctk.CTkFrame(grok_frame, fg_color="transparent")
+        grok_key_row.pack(fill="x", padx=15, pady=(0, 6))
+
+        ctk.CTkLabel(
+            grok_key_row, text="API Key:",
+            font=(FONT_FAMILY, FONT_SIZES["body"], "bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 10))
+
+        self.grok_key_entry = ctk.CTkEntry(
+            grok_key_row, width=350,
+            font=(FONT_FAMILY, FONT_SIZES["body"]),
+            fg_color=COLORS["bg_input"],
+            text_color=COLORS["text_primary"],
+            border_color=COLORS["border"],
+            border_width=1, corner_radius=8, height=32,
+            placeholder_text="xai-xxxxxxxxxxxxxxxxxxxxxxxx",
+            show="●",
+        )
+        self.grok_key_entry.pack(side="left")
+        if self.settings.get("grok_api_key"):
+            self.grok_key_entry.insert(0, self.settings["grok_api_key"])
+        Tooltip(self.grok_key_entry,
+                "Your xAI API key from console.x.ai.\n"
+                "Starts with 'xai-'. Kept locally — never sent anywhere but xAI.\n"
+                "Leave blank to disable Grok features.")
+
+        # Show/hide key toggle
+        self._grok_key_visible = False
+        btn_grok_eye = ActionButton(
+            grok_key_row, text="👁", command=self._toggle_grok_key_vis,
+            style="secondary", width=35,
+        )
+        btn_grok_eye.pack(side="left", padx=(6, 0))
+        Tooltip(btn_grok_eye, "Show / hide API key")
+
+        btn_grok_load = ActionButton(
+            grok_key_row, text="📂 Load", command=self._load_grok_key,
+            style="secondary", width=70,
+        )
+        btn_grok_load.pack(side="left", padx=(6, 0))
+        Tooltip(btn_grok_load, "Load xAI API key from a .txt or .env file")
+
+        self.btn_grok_verify = ActionButton(
+            grok_key_row, text="✅ Verify", command=self._verify_grok_key,
+            style="secondary", width=80,
+        )
+        self.btn_grok_verify.pack(side="left", padx=(6, 0))
+        Tooltip(self.btn_grok_verify, "Test the xAI API key by listing available models")
+
+        # Grok model dropdown
+        grok_model_row = ctk.CTkFrame(grok_frame, fg_color="transparent")
+        grok_model_row.pack(fill="x", padx=15, pady=(0, 12))
+
+        ctk.CTkLabel(
+            grok_model_row, text="Grok Model:",
+            font=(FONT_FAMILY, FONT_SIZES["body"], "bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 10))
+
+        from core.ai_cleaner import GROK_MODELS, GROK_DEFAULT_MODEL
+        self.grok_model_menu = ctk.CTkOptionMenu(
+            grok_model_row,
+            values=GROK_MODELS,
+            font=(FONT_FAMILY, FONT_SIZES["small"]),
+            fg_color=COLORS["bg_input"],
+            button_color=COLORS["accent"],
+            button_hover_color=COLORS["accent_hover"],
+            width=250, height=30,
+        )
+        self.grok_model_menu.pack(side="left")
+        self.grok_model_menu.set(
+            self.settings.get("grok_model", GROK_DEFAULT_MODEL)
+        )
+        Tooltip(self.grok_model_menu,
+                "Default model for xAI Grok.\n"
+                "grok-3 = most powerful, grok-3-mini = fast + smart.\n"
+                "grok-3-mini-fast = quickest for bulk cleaning.")
 
         # ─── Export Defaults Section ────────────────────────
         self._section_label(container, "🚀  Export Defaults")
@@ -547,6 +669,96 @@ class SettingsPage(ctk.CTkFrame):
         self._groq_key_visible = not self._groq_key_visible
         self.groq_key_entry.configure(show="" if self._groq_key_visible else "●")
 
+    def _toggle_grok_key_vis(self):
+        """Show/hide the xAI Grok API key."""
+        self._grok_key_visible = not self._grok_key_visible
+        self.grok_key_entry.configure(show="" if self._grok_key_visible else "●")
+
+    def _load_groq_key(self):
+        """Load Groq API key from a file."""
+        self._load_key_from_file(self.groq_key_entry, "Groq")
+
+    def _load_grok_key(self):
+        """Load xAI Grok API key from a file."""
+        self._load_key_from_file(self.grok_key_entry, "xAI Grok")
+
+    def _load_key_from_file(self, entry_widget, provider_name: str):
+        """Generic: load an API key from a .txt or .env file into an entry widget."""
+        import tkinter.filedialog as fd
+        path = fd.askopenfilename(
+            title=f"Select {provider_name} API Key File",
+            filetypes=[("Text files", "*.txt"), ("Env files", "*.env"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            # Handle .env format like GROK_API_KEY=xai-xxx or just the raw key
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    line = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if line:
+                    entry_widget.delete(0, "end")
+                    entry_widget.insert(0, line)
+                    self.status.set_success(f"Loaded {provider_name} key from file")
+                    return
+            self.status.set_error(f"No key found in file")
+        except Exception as e:
+            self.status.set_error(f"Error reading file: {e}")
+
+    def _verify_groq_key(self):
+        """Test the Groq API key by fetching the model list."""
+        import threading
+        key = self.groq_key_entry.get().strip()
+        if not key:
+            self.status.set_error("No Groq API key entered")
+            return
+        self.btn_groq_verify.configure(state="disabled", text="⏳...")
+        self.status.set_working("Testing Groq API key...")
+
+        def _check():
+            from core.ai_cleaner import groq_list_models, GROQ_MODELS
+            models = groq_list_models(key)
+            def _done():
+                self.btn_groq_verify.configure(state="normal", text="✅ Verify")
+                # If we got more models than the static fallback, key is working
+                if models and models != list(GROQ_MODELS):
+                    self.status.set_success(f"✅ Groq key valid — {len(models)} models available")
+                elif models:
+                    self.status.set_success(f"✅ Groq key loaded — using {len(models)} default models")
+                else:
+                    self.status.set_error("❌ Groq key failed — no models returned")
+            self.after(0, _done)
+        threading.Thread(target=_check, daemon=True).start()
+
+    def _verify_grok_key(self):
+        """Test the xAI Grok API key by fetching the model list."""
+        import threading
+        key = self.grok_key_entry.get().strip()
+        if not key:
+            self.status.set_error("No xAI Grok API key entered")
+            return
+        self.btn_grok_verify.configure(state="disabled", text="⏳...")
+        self.status.set_working("Testing xAI Grok API key...")
+
+        def _check():
+            from core.ai_cleaner import grok_list_models, GROK_MODELS
+            models = grok_list_models(key)
+            def _done():
+                self.btn_grok_verify.configure(state="normal", text="✅ Verify")
+                if models and models != list(GROK_MODELS):
+                    self.status.set_success(f"✅ xAI Grok key valid — {len(models)} models available")
+                elif models:
+                    self.status.set_success(f"✅ xAI Grok key loaded — using {len(models)} default models")
+                else:
+                    self.status.set_error("❌ xAI Grok key failed — no models returned")
+            self.after(0, _done)
+        threading.Thread(target=_check, daemon=True).start()
+
     def _gather_settings(self) -> dict:
         """Collect current UI values into a settings dict."""
         return {
@@ -562,6 +774,8 @@ class SettingsPage(ctk.CTkFrame):
             "ollama_num_ctx": self.ctx_var.get(),
             "groq_api_key": self.groq_key_entry.get().strip(),
             "groq_model": self.groq_model_menu.get(),
+            "grok_api_key": self.grok_key_entry.get().strip(),
+            "grok_model": self.grok_model_menu.get(),
             "ai_provider": self.provider_var.get(),
             "default_chunk_size": self._safe_int(self.chunk_entry.get(), 512),
             "default_system_prompt": self.prompt_text.get("1.0", "end-1c").strip(),
@@ -631,6 +845,9 @@ class SettingsPage(ctk.CTkFrame):
         self.groq_key_entry.delete(0, "end")
         self.groq_model_menu.set(DEFAULTS["groq_model"])
         self.provider_var.set(DEFAULTS["ai_provider"])
+
+        self.grok_key_entry.delete(0, "end")
+        self.grok_model_menu.set(DEFAULTS["grok_model"])
 
         self.chunk_entry.delete(0, "end")
         self.chunk_entry.insert(0, str(DEFAULTS["default_chunk_size"]))

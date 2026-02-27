@@ -18,6 +18,7 @@ from core.ai_cleaner import (
     clean_text, detect_content_type, list_models,
     is_ollama_running, preload_model, pull_model, DEFAULT_MODEL, DEFAULT_API_URL,
     groq_list_models, GROQ_MODELS, GROQ_DEFAULT_MODEL,
+    grok_list_models, GROK_MODELS, GROK_DEFAULT_MODEL,
 )
 from core.settings import load_settings
 
@@ -104,8 +105,8 @@ class CleanerPage(ctk.CTkFrame):
         )
         self.btn_provider.pack(side="left", padx=(0, 12))
         Tooltip(self.btn_provider,
-                "Switch between local Ollama and Groq Cloud.\n"
-                "Set your Groq API key in Settings first.")
+                "Cycle between Local Ollama, Groq Cloud, and xAI Grok.\n"
+                "Set your API keys in Settings first.")
 
         # Content type override
         ctk.CTkLabel(
@@ -367,29 +368,62 @@ class CleanerPage(ctk.CTkFrame):
     # ───────────────────────────────────────────────────────────────
 
     def _provider_label(self) -> str:
-        return "🖥  Local" if self._provider == "local" else "☁️  Groq Cloud"
+        if self._provider == "grok":
+            return "🤖  xAI Grok"
+        if self._provider == "groq":
+            return "☁️  Groq Cloud"
+        return "🖥  Local"
 
     def _toggle_provider(self):
-        """Switch between Local Ollama and Groq Cloud."""
+        """Cycle between Local Ollama → Groq Cloud → xAI Grok."""
         if self._provider == "local":
             key = self._settings.get("groq_api_key", "")
             if not key:
-                self.status.set_error(
-                    "No Groq API key — go to Settings → Groq Cloud"
-                )
-                return
-            self._provider = "groq"
-        else:
+                # Skip groq if no key, try grok
+                grok_key = self._settings.get("grok_api_key", "")
+                if not grok_key:
+                    self.status.set_error(
+                        "No Groq or Grok API key — go to Settings"
+                    )
+                    return
+                self._provider = "grok"
+            else:
+                self._provider = "groq"
+        elif self._provider == "groq":
+            grok_key = self._settings.get("grok_api_key", "")
+            if grok_key:
+                self._provider = "grok"
+            else:
+                self._provider = "local"
+        else:  # grok → local
             self._provider = "local"
 
         self.btn_provider.configure(text=self._provider_label())
         self._refresh_connection()
-        label = "☁️ Groq Cloud" if self._provider == "groq" else "🖥 Local Ollama"
-        self.status.set_status(f"Switched to {label}")
+        labels = {"local": "🖥 Local Ollama", "groq": "☁️ Groq Cloud", "grok": "🤖 xAI Grok"}
+        self.status.set_status(f"Switched to {labels.get(self._provider, self._provider)}")
 
     def _refresh_connection(self):
         """Refresh connection and model list based on current provider."""
-        if self._provider == "groq":
+        if self._provider == "grok":
+            key = self._settings.get("grok_api_key", "")
+            if key:
+                self.conn_dot.configure(text_color=COLORS["accent_green"])
+                self.conn_label.configure(
+                    text="🤖  xAI Grok connected",
+                    text_color=COLORS["accent_green"],
+                )
+                def _bg():
+                    models = grok_list_models(key)
+                    self.after(0, lambda: self._set_grok_models(models))
+                threading.Thread(target=_bg, daemon=True).start()
+            else:
+                self.conn_dot.configure(text_color=COLORS["warning"])
+                self.conn_label.configure(
+                    text="🤖  Grok — no API key (set in Settings)",
+                    text_color=COLORS["warning"],
+                )
+        elif self._provider == "groq":
             key = self._settings.get("groq_api_key", "")
             if key:
                 self.conn_dot.configure(text_color=COLORS["accent_green"])
@@ -415,6 +449,16 @@ class CleanerPage(ctk.CTkFrame):
         if models:
             self.model_menu.configure(values=models)
             pref = self._settings.get("groq_model", GROQ_DEFAULT_MODEL)
+            if pref in models:
+                self.model_menu.set(pref)
+            else:
+                self.model_menu.set(models[0])
+
+    def _set_grok_models(self, models):
+        """Update model dropdown with xAI Grok models."""
+        if models:
+            self.model_menu.configure(values=models)
+            pref = self._settings.get("grok_model", GROK_DEFAULT_MODEL)
             if pref in models:
                 self.model_menu.set(pref)
             else:
@@ -615,6 +659,10 @@ class CleanerPage(ctk.CTkFrame):
             self.status.set_error("No Groq API key — go to Settings → Groq Cloud")
             return
 
+        if self._provider == "grok" and not self._settings.get("grok_api_key"):
+            self.status.set_error("No xAI Grok API key — go to Settings → xAI Grok")
+            return
+
         self._queue = selected
         self._queue_idx = 0
         self._skipped = 0
@@ -747,6 +795,8 @@ class CleanerPage(ctk.CTkFrame):
         provider = self._provider
         groq_key = self._settings.get("groq_api_key", "")
         groq_model = self.model_menu.get()
+        grok_key = self._settings.get("grok_api_key", "")
+        grok_model = self.model_menu.get()
         self._first_token = True
 
         def on_token(text):
@@ -769,6 +819,8 @@ class CleanerPage(ctk.CTkFrame):
                 provider=provider,
                 groq_api_key=groq_key,
                 groq_model=groq_model,
+                grok_api_key=grok_key,
+                grok_model=grok_model,
             )
             self.after(0, lambda: self._finalize_result(entry, result))
 

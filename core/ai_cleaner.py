@@ -18,7 +18,7 @@ import urllib.error
 
 DEFAULT_MODEL = "qwen3-vl:4b-instruct"
 DEFAULT_API_URL = "http://localhost:11434"
-MAX_INPUT_CHARS = 12_000  # truncate monster files
+MAX_INPUT_CHARS = 24_000  # truncate monster files (increased for cloud models)
 
 # ─── Groq Cloud ────────────────────────────────────────────────────
 
@@ -34,108 +34,142 @@ GROQ_MODELS = [
     "gemma2-9b-it",
 ]
 
+# ─── xAI Grok (Super Grok) ────────────────────────────────────────
+
+GROK_API_URL = "https://api.x.ai/v1"
+GROK_DEFAULT_MODEL = "grok-3-mini"
+GROK_MODELS = [
+    "grok-3",
+    "grok-3-fast",
+    "grok-3-mini",
+    "grok-3-mini-fast",
+    "grok-2",
+]
+
 # ─── Prompt Library ────────────────────────────────────────────────
 
 _BASE_RULES = """\
-You are an expert data cleaner for LoRA / fine-tuning training datasets.
-Output ONLY the cleaned text — no explanations, no markdown fences,
+You are an expert knowledge extractor and note-taker for LoRA / fine-tuning training datasets.
+Your job is to read raw, messy text and produce comprehensive, well-organized notes
+that capture EVERY piece of useful information. Think like a meticulous student
+attending a lecture — write detailed notes on how everything works.
+Output ONLY the extracted notes — no explanations, no markdown fences,
 no "Here is the cleaned version:" preambles."""
 
 _PROMPTS = {
     "general": """\
 {base}
 
-Clean the following raw text:
-1. Remove junk: ads, navigation, footers, duplicates, boilerplate.
-2. Fix grammar, spelling, and formatting.
-3. Structure into clear paragraphs; use headings or bullet points where helpful.
-4. Preserve factual accuracy — do NOT invent information.
-5. Keep the author's voice and intent intact.
+Extract all useful knowledge from the following raw text and write detailed notes:
+1. Identify every concept, technique, fact, and actionable piece of information.
+2. Organize into clear sections with descriptive headings.
+3. Write in complete sentences — explain things so a reader can learn from your notes alone.
+4. Remove all junk: ads, navigation, footers, boilerplate, page numbers, TOC listings.
+5. Do NOT just list chapter titles or headings — extract the ACTUAL content beneath them.
+6. Preserve factual accuracy — do NOT invent information.
+7. If the input contains mostly junk (TOC, page numbers, headers only), extract whatever
+   real content exists and note what topics the source covers.
 
 Raw input:
 \"\"\"
 {text}
 \"\"\"
 
-Cleaned output:""",
+Detailed notes:""",
 
     "code": """\
 {base}
 
-Clean the following raw source code / technical snippet:
-1. Remove surrounding junk (HTML, nav, ads, page chrome).
+Extract and organize the following source code / technical snippet:
+1. Remove surrounding junk (HTML, nav, ads, page chrome, page numbers).
 2. Fix indentation and formatting to be idiomatic.
-3. Add brief inline comments if the intent is unclear.
+3. Add brief inline comments explaining what each section does.
 4. Remove dead code, debug prints, and TODO placeholders.
-5. Do NOT change logic or algorithms — preserve correctness.
+5. If there are explanations mixed with code, preserve them as comments or separate notes.
+6. Do NOT change logic or algorithms — preserve correctness.
 
 Raw input:
 \"\"\"
 {text}
 \"\"\"
 
-Cleaned output:""",
+Cleaned code with notes:""",
 
     "forum": """\
 {base}
 
-Clean the following forum / Q&A / social media post:
-1. Strip quotes of previous replies, signatures, timestamps, avatars.
+Extract all useful knowledge from this forum / Q&A / social media discussion:
+1. Strip quotes of previous replies, signatures, timestamps, avatars, page numbers.
 2. Remove "Thanks!", "+1", reaction text, and off-topic chatter.
-3. Keep only the substantive technical / informational content.
-4. Merge fragmented sentences into coherent paragraphs.
-5. Preserve any code blocks or command examples exactly.
+3. Extract the core question and ALL substantive answers/solutions.
+4. Write clear, detailed notes covering every technique, command, and explanation shared.
+5. Preserve any code blocks, command examples, and file paths exactly.
+6. If multiple solutions are discussed, organize them as separate approaches.
 
 Raw input:
 \"\"\"
 {text}
 \"\"\"
 
-Cleaned output:""",
+Detailed notes:""",
 
     "technical": """\
 {base}
 
-Clean the following technical / academic / PDF-extracted text:
-1. Remove page numbers, headers, footers, watermarks, table-of-contents junk.
-2. Fix OCR artefacts (broken words, ligature issues, bad line breaks).
-3. Re-flow paragraphs — merge lines that were split by page width.
-4. Preserve tables as readable plain text (use | or indentation).
-5. Keep citations and references but clean their formatting.
+You are reading a technical document, guide, research paper, or PDF extraction.
+Your job is to be the most thorough note-taker imaginable — like a strict professor
+who demands that every important detail is captured.
+
+CRITICAL RULES:
+1. IGNORE all table-of-contents entries, page numbers, headers, footers, watermarks,
+   and navigation text. These are JUNK — do NOT reproduce them.
+2. Extract ALL actual knowledge: explanations, procedures, commands, code examples,
+   techniques, concepts, definitions, warnings, tips, and step-by-step instructions.
+3. Write detailed, structured notes organized by topic with descriptive headings.
+4. Explain each concept thoroughly — your notes should be a complete study guide.
+5. Preserve ALL code examples, commands, file paths, register names, and technical values exactly.
+6. Fix OCR artefacts (broken words, ligature issues, bad line breaks).
+7. If the input is mostly TOC/headers/page numbers with little real content,
+   extract whatever real content exists and state what topics the full document covers.
+8. Do NOT just list section names — extract what each section TEACHES.
 
 Raw input:
 \"\"\"
 {text}
 \"\"\"
 
-Cleaned output:""",
+Comprehensive study notes:""",
 
     "transcript": """\
 {base}
 
-Clean the following audio / video transcript:
+Extract all useful knowledge from this audio / video transcript:
 1. Remove filler words (uh, um, like, you know) and stutters.
 2. Fix sentence boundaries and punctuation.
-3. Break into logical paragraphs by topic shift.
-4. Attribute speakers if names appear; otherwise use "Speaker 1", etc.
-5. Preserve technical terms, proper nouns, and quoted code verbatim.
+3. Organize by topic — each time the subject changes, start a new section with a heading.
+4. Write clear notes that capture EVERYTHING useful that was said.
+5. Attribute speakers if names appear; otherwise use "Speaker 1", etc.
+6. Preserve technical terms, proper nouns, code, and commands verbatim.
+7. Don't just summarize — capture the full detail of explanations and instructions.
 
 Raw input:
 \"\"\"
 {text}
 \"\"\"
 
-Cleaned output:""",
+Detailed notes:""",
 }
 
 _STRICT_SUFFIX = """
 
-⚠ This is attempt {attempt}. Previous cleanings were NOT strict enough.
-Be more aggressive:
-- Cut ALL remaining fluff, filler, and redundancy.
-- Make sentences shorter and factually denser.
-- Remove ANY speculation, hedging, or padding.
-- If the cleaned version is longer than the original, you over-generated — trim harder.
+⚠ This is attempt {attempt}. Previous extraction was NOT thorough enough.
+Be more aggressive and detailed:
+- Extract DEEPER — find every technique, command, concept, and procedure.
+- Remove ALL remaining junk (TOC entries, page numbers, headers, navigation).
+- Write more detailed explanations — your notes should teach, not just list.
+- Organize better with clear headings and logical flow.
+- If you see section titles without content, say what the section is about.
+- Do NOT output table-of-contents lines, page numbers, or chapter listings.
 """
 
 
@@ -194,6 +228,8 @@ def clean_text(
     provider: str = "local",
     groq_api_key: str = "",
     groq_model: str = GROQ_DEFAULT_MODEL,
+    grok_api_key: str = "",
+    grok_model: str = GROK_DEFAULT_MODEL,
 ) -> dict:
     """
     Clean *raw_text* via Ollama (local) or Groq (cloud).
@@ -229,9 +265,13 @@ def clean_text(
     if attempt > 1:
         prompt += _STRICT_SUFFIX.format(attempt=attempt)
 
-    # Call AI backend (Ollama local or Groq cloud)
+    # Call AI backend (Ollama local, Groq cloud, or xAI Grok)
     try:
-        if provider == "groq" and groq_api_key:
+        if provider == "grok" and grok_api_key:
+            cleaned = grok_generate(
+                prompt, model=grok_model, api_key=grok_api_key, on_token=on_token,
+            )
+        elif provider == "groq" and groq_api_key:
             cleaned = groq_generate(
                 prompt, model=groq_model, api_key=groq_api_key, on_token=on_token,
             )
@@ -648,3 +688,116 @@ def groq_list_models(api_key: str = "") -> list[str]:
         return names if names else list(GROQ_MODELS)
     except Exception:
         return list(GROQ_MODELS)
+
+
+# ─── xAI Grok Backend ─────────────────────────────────────────────
+
+def grok_chat(
+    messages: list[dict],
+    model: str = GROK_DEFAULT_MODEL,
+    api_key: str = "",
+    on_token=None,
+) -> dict:
+    """
+    Multi-turn chat via xAI's OpenAI-compatible /chat/completions endpoint.
+
+    Uses pure HTTP — no pip dependency.  Supports streaming via SSE.
+
+    Returns dict:  {success, reply, error}
+    """
+    if not api_key:
+        return {"success": False, "reply": "", "error": "xAI Grok API key not set — add it in Settings."}
+
+    url = f"{GROK_API_URL}/chat/completions"
+    stream = on_token is not None
+
+    payload = json.dumps({
+        "model": model,
+        "messages": messages,
+        "stream": stream,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "max_tokens": 4096,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            if not stream:
+                data = json.loads(resp.read().decode())
+                reply = data["choices"][0]["message"]["content"].strip()
+                return {"success": True, "reply": reply, "error": ""}
+            # SSE streaming — lines prefixed with "data: "
+            chunks = []
+            for raw_line in resp:
+                line = raw_line.decode("utf-8").strip()
+                if not line or not line.startswith("data: "):
+                    continue
+                payload_str = line[6:]  # strip "data: "
+                if payload_str == "[DONE]":
+                    break
+                try:
+                    obj = json.loads(payload_str)
+                except json.JSONDecodeError:
+                    continue
+                delta = obj.get("choices", [{}])[0].get("delta", {})
+                token = delta.get("content", "")
+                if token:
+                    chunks.append(token)
+                    on_token(token)
+            return {"success": True, "reply": "".join(chunks).strip(), "error": ""}
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode()
+            err_data = json.loads(body)
+            msg = err_data.get("error", {}).get("message", body[:200])
+        except Exception:
+            msg = body[:200] or str(e)
+        return {"success": False, "reply": "", "error": f"xAI Grok API error ({e.code}): {msg}"}
+    except urllib.error.URLError as e:
+        return {"success": False, "reply": "", "error": f"Cannot reach xAI: {e}"}
+    except Exception as e:
+        return {"success": False, "reply": "", "error": str(e)}
+
+
+def grok_generate(
+    prompt: str,
+    model: str = GROK_DEFAULT_MODEL,
+    api_key: str = "",
+    on_token=None,
+) -> str:
+    """Single-prompt generation via xAI Grok (for cleaning).
+
+    Wraps the prompt as a user message and calls grok_chat.
+    Returns the cleaned text string, or raises on error.
+    """
+    messages = [{"role": "user", "content": prompt}]
+    result = grok_chat(messages, model=model, api_key=api_key, on_token=on_token)
+    if result["success"]:
+        return result["reply"]
+    raise ConnectionError(result["error"])
+
+
+def grok_list_models(api_key: str = "") -> list[str]:
+    """Fetch available models from xAI API.  Falls back to static list."""
+    if not api_key:
+        return list(GROK_MODELS)
+    try:
+        url = f"{GROK_API_URL}/models"
+        req = urllib.request.Request(
+            url, method="GET",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+        names = sorted(m["id"] for m in data.get("data", []))
+        return names if names else list(GROK_MODELS)
+    except Exception:
+        return list(GROK_MODELS)

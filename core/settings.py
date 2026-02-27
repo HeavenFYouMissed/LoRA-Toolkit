@@ -43,7 +43,12 @@ DEFAULTS = {
     # Groq Cloud API
     "groq_api_key": "",
     "groq_model": "llama-3.1-70b-versatile",
-    "ai_provider": "local",  # "local" = Ollama, "groq" = Groq Cloud
+
+    # xAI Grok (Super Grok)
+    "grok_api_key": "",
+    "grok_model": "grok-3-mini",
+
+    "ai_provider": "local",  # "local" = Ollama, "groq" = Groq Cloud, "grok" = xAI Grok
 
     # Appearance
     "accent_color": "#e94560",
