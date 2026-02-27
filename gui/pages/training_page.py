@@ -1448,19 +1448,23 @@ class TrainingPage(ctk.CTkFrame):
 
         def _do():
             try:
-                # Build command as a plain ASCII string for cmd.exe.
-                # cmd chokes on non-ASCII (em-dashes etc.) in the line,
-                # so keep everything plain.
-                cmd_line = (
-                    f'"{venv_python}" "{script_path}" & '
-                    f'if errorlevel 1 ('
-                    f'echo. & echo [ERROR] Training crashed -- see above. & pause'
-                    f') else ('
-                    f'echo. & echo Training finished. & pause'
-                    f')'
-                )
+                # Write a small .bat launcher to avoid ALL cmd.exe quoting
+                # headaches.  cmd /K + quoted paths is notoriously fragile.
+                bat_path = os.path.join(DATA_DIR, "_run_training.bat")
+                with open(bat_path, "w", encoding="ascii", errors="replace") as f:
+                    f.write("@echo off\n")
+                    f.write(f'"{venv_python}" "{script_path}"\n')
+                    f.write("if errorlevel 1 (\n")
+                    f.write("  echo.\n")
+                    f.write("  echo [ERROR] Training crashed -- see above.\n")
+                    f.write(") else (\n")
+                    f.write("  echo.\n")
+                    f.write("  echo Training finished successfully.\n")
+                    f.write(")\n")
+                    f.write("pause\n")
+
                 subprocess.Popen(
-                    f'cmd /K {cmd_line}',
+                    ["cmd", "/C", bat_path],
                     creationflags=subprocess.CREATE_NEW_CONSOLE,
                     cwd=DATA_DIR,
                 )
