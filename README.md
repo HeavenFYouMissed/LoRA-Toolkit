@@ -67,8 +67,8 @@ I hope it helps the newbies to data and training. It's honestly a pain in the \*
 Clean & polish your training data with local AI — no cloud, no API keys.
 - Side-by-side diff review (original vs cleaned) with color-coded changes
 - **Live streaming** — see AI output token-by-token as it generates
-- Content-type-aware prompts (code, forum, technical, transcript, general)
-- Batch mode: processes selected entries one-by-one with Keep / Skip / Regenerate / Edit
+- Content-type-aware prompts (code, forum, technical, transcript, general)- **Smart chunking** — 200K+ word documents auto-split on chapter/section boundaries, processed in parallel chunks
+- **3 AI providers** — Local Ollama, Groq Cloud, or xAI Grok- Batch mode: processes selected entries one-by-one with Keep / Skip / Regenerate / Edit
 - Green ● / gray ○ indicators show which entries have been cleaned
 - Dynamic token budget — fast cleaning even with 7B+ models
 - Supports uncensored models (Dolphin series) for sensitive topics
@@ -125,8 +125,17 @@ Alpaca - ShareGPT - Completion - ChatML - Raw JSONL
 - **CPU fallback** (context injection via long-context models)
 - Auto-resolves Ollama names -> Hugging Face repos (prefers uncensored/abliterated variants)
 - VRAM-aware model recommendations
+- **14-point dependency check** — Python version, torch build, GPU arch compatibility, all packages verified before launch
+- Smart `.bat` launcher — training runs in its own console window with error handling
 
 <img width="700" alt="Training Page" src="https://github.com/user-attachments/assets/4ee326a5-f8bc-4b23-8933-8cf8681627c7" />
+
+#### Training in Action
+> Qwen3-14B LoRA fine-tuning running live — Unsloth 2026.2.1 patching on RTX 5080, model downloading at 114 MB/s
+
+<p align="center">
+  <img width="800" alt="Training in Action — LoRA fine-tuning with Unsloth on RTX 5080" src="screenshots/training_in_action.png" />
+</p>
 
 ### Model Merging ("Forge")
 - Mergekit integration (SLERP, Linear, TIES, DARE-TIES, Passthrough)
@@ -196,8 +205,9 @@ Click the 3 buttons in order:
 
 Or install manually:
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-pip install "unsloth[cu124-torch250] @ git+https://github.com/unslothai/unsloth.git"
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+pip install "unsloth @ git+https://github.com/unslothai/unsloth.git"
+pip install xformers torchao --index-url https://download.pytorch.org/whl/cu128
 pip install peft transformers trl datasets accelerate bitsandbytes sentencepiece protobuf
 ```
 

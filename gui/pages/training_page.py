@@ -1314,7 +1314,7 @@ class TrainingPage(ctk.CTkFrame):
             'print("═" * 50)',
             'print()',
             f'print("Next steps:")',
-            f'print(f"  1. cd {DATA_DIR}")',
+            f'print(r"  1. cd {DATA_DIR}")',
             f'print(f"  2. ollama create {model_name} -f Modelfile")',
             f'print(f"  3. ollama run {model_name}")',
             'print()',
