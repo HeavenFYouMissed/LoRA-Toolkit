@@ -312,12 +312,17 @@ def chat(
     model: str = DEFAULT_MODEL,
     api_url: str = DEFAULT_API_URL,
     on_token=None,
+    num_ctx: int | None = None,
 ) -> dict:
     """
     Multi-turn chat with Ollama via /api/chat.
 
     *messages* is a list of {"role": "system"|"user"|"assistant", "content": "..."}.
     *on_token*: optional callback ``fn(str)`` invoked for each streamed token.
+    *num_ctx*: context window size.  When ``None`` it's auto-calculated from
+              the total message content (word_count * 1.5 + 2048 headroom).
+              This is critical — Ollama defaults to 2048 which silently
+              truncates long system prompts (like those with file context).
 
     Returns dict:
         success: bool
@@ -326,6 +331,13 @@ def chat(
     """
     url = f"{api_url.rstrip('/')}/api/chat"
     stream = on_token is not None
+
+    # Auto-size the context window so the model can actually see all content
+    if num_ctx is None:
+        total_words = sum(len(m["content"].split()) for m in messages)
+        # ~1.3 tokens/word + 2048 headroom for response
+        num_ctx = min(32768, max(4096, int(total_words * 1.5) + 2048))
+
     payload = json.dumps({
         "model": model,
         "messages": messages,
@@ -335,6 +347,7 @@ def chat(
             "temperature": 0.7,
             "top_p": 0.9,
             "num_predict": 4096,
+            "num_ctx": num_ctx,
         },
     }).encode("utf-8")
 
@@ -400,6 +413,11 @@ def _ollama_generate(
         max_tokens = min(4096, max(512, int(input_words * 1.2)))
 
     stream = on_token is not None
+
+    # Auto-size context window: input + output budget + headroom
+    input_tokens_est = int(len(prompt.split()) * 1.3)
+    num_ctx = min(32768, max(4096, input_tokens_est + max_tokens + 512))
+
     payload = json.dumps({
         "model": model,
         "prompt": prompt,
@@ -409,6 +427,7 @@ def _ollama_generate(
             "temperature": 0.3,
             "top_p": 0.9,
             "num_predict": max_tokens,
+            "num_ctx": num_ctx,
         },
     }).encode("utf-8")
 

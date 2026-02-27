@@ -176,9 +176,13 @@ class DataChatPopup(ctk.CTkToplevel):
 
         # Stats
         est_tokens = int(total_words * 1.3)
+        ctx_window = min(32768, max(4096, int(total_words * 1.5) + 2048))
         ctk.CTkLabel(
             sb_inner,
-            text=f"{len(self._file_summaries)} files  •  {total_words:,} words  •  ~{est_tokens:,} tokens",
+            text=(
+                f"{len(self._file_summaries)} files  •  {total_words:,} words\n"
+                f"~{est_tokens:,} tokens  •  ctx window: {ctx_window:,}"
+            ),
             font=(FONT_FAMILY, FONT_SIZES["small"]),
             text_color=COLORS["text_muted"],
         ).pack(anchor="w", pady=(4, 8))
